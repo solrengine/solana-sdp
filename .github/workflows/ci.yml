@@ -19,8 +19,32 @@ jobs:
         with:
           ruby-version: ${{ matrix.ruby-version }}
           bundler-cache: true
+      # Includes the OpenAPI contract tests (test/sdp/contract_test.rb),
+      # which validate the covered endpoints and the fields the gem reads
+      # against the vendored pinned spec (spec/openapi-v0.28.json).
       - name: Run tests
         run: bundle exec rake test
+
+  # Scheduled drift check against a newer SDP spec — enable once there is a
+  # remote source for SDP's generated openapi.json (no public artifact yet).
+  # A drift finding is a report, not a failure: the task always exits 0.
+  # Remember to also add under `on:`:
+  #   schedule:
+  #     - cron: "0 6 * * 1"
+  #
+  # drift:
+  #   if: github.event_name == 'schedule'
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - uses: ruby/setup-ruby@v1
+  #       with:
+  #         ruby-version: "3.4"
+  #         bundler-cache: true
+  #     - name: Fetch newer SDP spec
+  #       run: curl -fsSL "$SDP_OPENAPI_URL" -o /tmp/openapi-latest.json
+  #     - name: Drift report
+  #       run: bundle exec rake "sdp:drift[/tmp/openapi-latest.json]"
 
   rubocop:
     runs-on: ubuntu-latest
