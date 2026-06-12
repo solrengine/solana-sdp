@@ -5,6 +5,9 @@ require "json"
 require "uri"
 
 require_relative "errors"
+require_relative "pagination"
+require_relative "resources/wallets"
+require_relative "resources/payments"
 
 module Sdp
   # Zero-dependency Net::HTTP request core for the SDP API.
@@ -19,6 +22,9 @@ module Sdp
   # primitives below; this class owns auth, envelope handling, the typed error
   # mapping, and the retry posture.
   class Client
+    include Resources::Wallets
+    include Resources::Payments
+
     DEFAULT_BASE_URL = "http://127.0.0.1:8787"
     OPEN_TIMEOUT = 2  # seconds — fail fast when the stack isn't up
     READ_TIMEOUT = 10 # seconds — transfer confirmation is synchronous
