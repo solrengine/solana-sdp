@@ -196,20 +196,22 @@ module Sdp
       assert_match(/wallet-scoped API keys return 404/, error.message)
     end
 
+    # 409 on /v1/wallets/initialize specifically raises ProviderCapabilityError
+    # (FL-10, see capability_errors_test.rb); these cover the generic mapping.
     def test_409_conflict_code_raises_conflict
-      stub_request(:post, "#{BASE_URL}/v1/wallets/initialize")
+      stub_request(:post, WALLETS_URL)
         .to_return(status: 409, headers: json_headers,
-                   body: error_body("CONFLICT", "Project wallet already initialized"))
+                   body: error_body("CONFLICT", "Wallet already exists"))
 
-      error = assert_raises(Sdp::Conflict) { @client.post("/v1/wallets/initialize") }
-      assert_equal "Project wallet already initialized", error.message
+      error = assert_raises(Sdp::Conflict) { @client.post("/v1/wallets") }
+      assert_equal "Wallet already exists", error.message
       assert_equal "CONFLICT", error.code
     end
 
     def test_plain_409_raises_conflict_by_status
-      stub_request(:post, "#{BASE_URL}/v1/wallets/initialize").to_return(status: 409, body: "")
+      stub_request(:post, WALLETS_URL).to_return(status: 409, body: "")
 
-      error = assert_raises(Sdp::Conflict) { @client.post("/v1/wallets/initialize") }
+      error = assert_raises(Sdp::Conflict) { @client.post("/v1/wallets") }
       assert_equal 409, error.http_status
     end
 

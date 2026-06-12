@@ -26,6 +26,42 @@ module Sdp
   # 400 / BAD_REQUEST / VALIDATION_ERROR — the request itself is wrong.
   class BadRequest < Error; end
 
+  # A request the configured custody provider cannot serve — not a malformed
+  # request. Raised for the FL-10 gates:
+  #
+  # - 400 whose message matches PROVISIONING_GATE_PATTERN: local custody
+  #   holds exactly one root wallet, so POST /v1/wallets is rejected.
+  #   Wallet-per-User requires a managed provider (e.g. privy).
+  # - 409 on POST /v1/wallets/initialize: custody is already initialized for
+  #   this organization/project — initialization is one-time.
+  #
+  # Subclasses BadRequest so existing rescues keep working; never retryable —
+  # the same request fails until the provider configuration changes.
+  class ProviderCapabilityError < BadRequest
+    # Verified against SDP v0.28: assertCustodyProviderCanCreateWallet
+    # (apps/sdp-api/src/services/custody-provider-lifecycle.service.ts) and
+    # createProviderWallet (services/domain/signing/provider-wallet-lifecycle.ts)
+    # both throw:
+    #   "Wallet provisioning not supported for provider: ${provider}"
+    PROVISIONING_GATE_PATTERN = /Wallet provisioning not supported/i
+  end
+
+  # 502 / SOLANA_RPC_ERROR carrying the NativeAdapter signature — the FL-11
+  # gate. With FEE_PAYMENT_PROVIDER=native, SDP can build and sign transfers
+  # but cannot SUBMIT them; the fix is configuration (run Kora, set
+  # FEE_PAYMENT_PROVIDER=kora), so retrying is pointless. A 502 that does
+  # NOT match the pattern is a real upstream outage and stays Unavailable —
+  # mislabeling an RPC outage as "configure Kora" would be worse than a
+  # generic error.
+  class TransferExecutionError < Error
+    # Verified against SDP v0.28: NativeAdapter#signAndSend
+    # (apps/sdp-api/src/services/adapters/fee-payment/native/native.adapter.ts)
+    # throws:
+    #   "NativeAdapter.signAndSend not supported - use KoraAdapter for gasless transactions"
+    # (#signAsFeePayer throws the same shape with its own method name).
+    NATIVE_ADAPTER_PATTERN = /NativeAdapter\.\w+ not supported - use KoraAdapter/
+  end
+
   # 401 / UNAUTHORIZED — key missing, malformed, or revoked.
   class Unauthorized < Error; end
 

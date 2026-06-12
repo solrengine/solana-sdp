@@ -100,7 +100,7 @@ module Sdp
         read_timeout: @read_timeout
       ) { |http| http.request(request) }
 
-      handle(response)
+      handle(response, uri.path)
     rescue Net::OpenTimeout => e
       # The TCP connection never opened — the request was definitely not
       # sent, so this is "unreachable" (safe to retry/fall back), never the
@@ -121,14 +121,14 @@ module Sdp
       uri
     end
 
-    def handle(response)
+    def handle(response, path)
       status = response.code.to_i
       body = parse_body(response.body)
 
       # HTTP 202 is SDP's "accepted, awaiting signatures" response. It is in
       # the 2xx range but carries the ERROR envelope, so it must be handled
       # before the success branch or it silently parses as a success.
-      raise_typed_error(status, body) if status == 202
+      raise_typed_error(status, body, path) if status == 202
 
       if (200..299).cover?(status)
         data = body.is_a?(Hash) && body.key?("data") ? body["data"] : body
@@ -136,7 +136,7 @@ module Sdp
         return Response.new(data: symbolize(data), meta: symbolize(meta))
       end
 
-      raise_typed_error(status, body)
+      raise_typed_error(status, body, path)
     end
 
     def parse_body(raw)
@@ -146,7 +146,7 @@ module Sdp
       nil
     end
 
-    def raise_typed_error(status, body)
+    def raise_typed_error(status, body, path)
       error = body.is_a?(Hash) ? body["error"] : nil
       code = error.is_a?(Hash) ? error["code"] : nil
       message = (error.is_a?(Hash) && error["message"]) || "SDP request failed (HTTP #{status})"
@@ -154,8 +154,33 @@ module Sdp
       meta = body.is_a?(Hash) ? symbolize(body["meta"]) : nil
 
       klass = error_class_for(status, code)
+      klass, message = capability_gate(klass, status, code, message, path)
       message = "#{message} #{NOT_FOUND_HINT}" if klass <= Sdp::NotFound
       raise klass.new(message, code: code, http_status: status, details: details, meta: meta)
+    end
+
+    # FL-10/FL-11: SDP reports custody/fee-payment capability gates as
+    # generic 400/409/502 responses. Discriminators verified against SDP
+    # v0.28 (pattern constants documented in errors.rb). The upstream
+    # message is preserved and the fix is appended, so logs keep the
+    # original evidence.
+    def capability_gate(klass, status, code, message, path)
+      if status == 400 && message.to_s.match?(Sdp::ProviderCapabilityError::PROVISIONING_GATE_PATTERN)
+        [ Sdp::ProviderCapabilityError,
+          "#{message} — local custody holds a single root wallet; Wallet-per-User requires a " \
+          "managed provider (e.g. privy) — set provider: on create_wallet or SDP_CUSTODY_PROVIDER." ]
+      elsif status == 409 && path.to_s.end_with?("/v1/wallets/initialize")
+        [ Sdp::ProviderCapabilityError,
+          "#{message} — custody is already initialized for this organization/project; " \
+          "initialize_custody is one-time. Use list_wallets to find the existing root wallet." ]
+      elsif status == 502 && code == "SOLANA_RPC_ERROR" &&
+            message.to_s.match?(Sdp::TransferExecutionError::NATIVE_ADAPTER_PATTERN)
+        [ Sdp::TransferExecutionError,
+          "#{message} — SDP's native fee adapter cannot submit transactions; " \
+          "run Kora and set FEE_PAYMENT_PROVIDER=kora." ]
+      else
+        [ klass, message ]
+      end
     end
 
     # Code takes precedence over status; status is the fallback. A 5xx that
