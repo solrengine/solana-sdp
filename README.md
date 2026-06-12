@@ -118,7 +118,13 @@ Running against a different SDP version may work, but field shapes (e.g. `usdVal
 
 This gem covers SDP's wallets and payments surface: custody initialization, wallet provisioning and listing, balances, and transfers (create/prepare/list/get). Ramps, issuance, and the dashboard APIs are out of scope.
 
-A Rails engine building on this client — Wallet-per-User provisioning, transfer persistence, and realtime balance updates — is coming as `solrengine-sdp`. See [solrengine.org](https://solrengine.org).
+A Rails engine builds on this client — Wallet-per-User provisioning, transfer persistence, and realtime balance updates — as [solrengine-sdp](https://github.com/solrengine/solrengine-sdp).
+
+## See also
+
+- [solrengine-sdp](https://github.com/solrengine/solrengine-sdp) — the Rails engine on top of this client: Wallet-per-User provisioning, tracked transfers, live balance updates.
+- [solrengine.org](https://solrengine.org) — the SolRengine family: the connect-your-wallet stack, and how both custody models compose.
+- [Solana Developer Platform](https://github.com/solana-foundation/solana-developer-platform) — the SDP itself: the wallets + payments API this gem covers.
 
 ## Development
 
