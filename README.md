@@ -67,9 +67,11 @@ end
 
 Also available: `prepare_transfer` (build but don't sign/send, for non-custodial flows), `get_transfer`, `list_wallets`.
 
+`list_wallets` returns an **Array** (`[Sdp::Wallet, ...]`) today — SDP does not paginate `/v1/wallets` at v0.28, so the result is fetched eagerly. When SDP adds pagination this will become a lazy Enumerator (matching `list_transfers`). Use Enumerable methods (`.find`, `.each`, `.map`) rather than array indexing or `.length` to stay forward-compatible.
+
 ## Error taxonomy
 
-Everything raised by this gem subclasses `Sdp::Error`, which carries `#code`, `#http_status`, `#details`, and `#meta` alongside the message. The taxonomy mirrors how SDP actually fails:
+Everything raised by this gem subclasses `Sdp::Error`, which carries `#code`, `#http_status`, `#details`, and `#meta` alongside the message. Both `#details` and `#meta` are Hashes with **snake_case symbol keys** — SDP's camelCase JSON is converted to Ruby style throughout (e.g. `error.details[:field_errors]`, not `"fieldErrors"` or `:fieldErrors`). The taxonomy mirrors how SDP actually fails:
 
 | Class | Raised when | Retryable? |
 |---|---|---|
@@ -86,7 +88,7 @@ Everything raised by this gem subclasses `Sdp::Error`, which carries `#code`, `#
 | `Sdp::RateLimited` | 429 | Yes, with backoff |
 | `Sdp::Timeout` | Read timeout — for POSTs the outcome is **unknown** | Reads yes; writes: reconcile first |
 | `Sdp::Unavailable` | Connection refused/reset, connect timeout, or a 5xx that isn't a recognized capability gate | Yes — the request wasn't processed |
-| `Sdp::TransferExecutionError` | 502 `SOLANA_RPC_ERROR` carrying SDP's NativeAdapter signature — the fee-payment provider cannot submit transactions | No — configuration fix |
+| `Sdp::TransferExecutionError` (< `Sdp::Error`) | 502 `SOLANA_RPC_ERROR` carrying SDP's NativeAdapter signature — the fee-payment provider cannot submit transactions. **Not caught by `rescue Sdp::Unavailable`** — it is not a transient error | No — configuration fix |
 
 Two of these encode SDP capability gates that otherwise surface as cryptic generic errors (discriminator strings verified against SDP v0.28, documented in `lib/sdp/errors.rb`):
 

@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "uri"
+
 module Sdp
   # Token balance row from GET /v1/payments/wallets/:id/balances.
   # amount is base units (string); ui_amount is the decimal string.
@@ -56,7 +58,9 @@ module Sdp
       # POST /v1/wallets → Sdp::Wallet. Wallet#id is SDP's walletId.
       def create_wallet(label:, provider: nil)
         response = post("/v1/wallets", { label: label, provider: provider }.compact)
-        Wallet.from_hash(response.data[:wallet] || response.data)
+        data = response.data
+        src = data.is_a?(Hash) ? (data[:wallet] || data) : data
+        Wallet.from_hash(src)
       end
 
       # GET /v1/wallets → [Sdp::Wallet, ...]
@@ -81,9 +85,15 @@ module Sdp
       # Upstream swallows RPC failures, so a token row (even SOL) may be
       # MISSING entirely — a missing row means "unavailable", never zero.
       def wallet_balances(wallet_id)
-        data = get("/v1/payments/wallets/#{wallet_id}/balances").data
+        data = get("/v1/payments/wallets/#{encode_path_segment(wallet_id)}/balances").data
         container = data.is_a?(Hash) ? (data[:wallet_balances] || data) : {}
         (container[:balances] || []).map { |balance| Balance.from_hash(balance) }
+      end
+
+      private
+
+      def encode_path_segment(segment)
+        URI.encode_uri_component(segment.to_s)
       end
     end
   end

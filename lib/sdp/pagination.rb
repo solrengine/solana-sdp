@@ -21,7 +21,8 @@ module Sdp
   # single fetch — and they pick up auto-pagination for free if SDP paginates
   # them in a later version.
   module Pagination
-    MAX_PAGE_SIZE = 100 # SDP's pageSize ceiling (v0.28)
+    MAX_PAGE_SIZE = 100    # SDP's pageSize ceiling (v0.28)
+    MAX_PAGES     = 10_000 # defensive ceiling; empty-page + hasMore guards are the primary stop
 
     # client — anything exposing #get(path, query:) → Client::Response
     # query  — wire-shaped (camelCase keys), nils allowed (compacted here)
@@ -45,7 +46,11 @@ module Sdp
           # An empty page also stops: hasMore with zero rows would loop forever.
           break if rows.empty? || !meta[:has_more]
 
-          page = (meta[:page] || page || 1) + 1
+          # Advance a LOCAL counter the client owns; ignore meta[:page] so a
+          # server that echoes the wrong page number cannot cause an infinite
+          # loop or a TypeError (string "1" + 1).
+          page = (page || 1) + 1
+          break if page > MAX_PAGES
         end
       end
     end

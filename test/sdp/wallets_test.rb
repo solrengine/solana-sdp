@@ -103,6 +103,20 @@ module Sdp
       assert_requested(stub)
     end
 
+    # -- fix A: empty 2xx body → all-nil struct, no NoMethodError -----------------
+
+    def test_create_wallet_empty_200_body_returns_all_nil_wallet_struct
+      stub_request(:post, WALLETS_URL)
+        .with(body: { label: "empty-test" })
+        .to_return(status: 200, body: "")
+
+      wallet = @client.create_wallet(label: "empty-test")
+
+      assert_instance_of Sdp::Wallet, wallet
+      assert_nil wallet.id
+      assert_nil wallet.public_key
+    end
+
     # -- list_wallets -----------------------------------------------------------
 
     def test_list_wallets_returns_wallet_structs_in_a_single_request
@@ -253,6 +267,32 @@ module Sdp
         )
 
       assert_equal [], @client.wallet_balances("wal_1")
+    end
+
+    # -- fix B: wallet_id-in-path percent-encoding ------------------------------
+
+    def test_wallet_balances_percent_encodes_space_in_wallet_id
+      stub = stub_request(:get, "#{BASE_URL}/v1/payments/wallets/wal%201/balances")
+        .to_return(
+          status: 200,
+          headers: json_headers,
+          body: { data: { walletBalances: { walletId: "wal 1", balances: [] } }, meta: {} }.to_json
+        )
+
+      @client.wallet_balances("wal 1")
+      assert_requested(stub)
+    end
+
+    def test_wallet_balances_percent_encodes_query_chars_in_wallet_id
+      stub = stub_request(:get, "#{BASE_URL}/v1/payments/wallets/wal%3Fx%3D1/balances")
+        .to_return(
+          status: 200,
+          headers: json_headers,
+          body: { data: { walletBalances: { walletId: "wal?x=1", balances: [] } }, meta: {} }.to_json
+        )
+
+      @client.wallet_balances("wal?x=1")
+      assert_requested(stub)
     end
 
     private

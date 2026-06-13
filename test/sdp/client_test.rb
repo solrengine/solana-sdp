@@ -31,6 +31,41 @@ module Sdp
       end
     end
 
+    def test_api_key_with_trailing_newline_is_stripped_and_usable
+      client = Sdp::Client.new(base_url: BASE_URL, api_key: "test-key\n")
+
+      stub = stub_request(:get, WALLETS_URL)
+        .with(headers: { "Authorization" => "Bearer test-key" })
+        .to_return(status: 200, headers: json_headers, body: { data: [], meta: {} }.to_json)
+
+      client.get("/v1/wallets")
+      assert_requested(stub)
+    end
+
+    def test_inspect_does_not_leak_the_api_key
+      client = Sdp::Client.new(base_url: BASE_URL, api_key: "super-secret-key")
+
+      refute_match(/super-secret-key/, client.inspect)
+      assert_match(/base_url=/, client.inspect)
+    end
+
+    def test_blank_base_url_raises_configuration_error
+      with_env("SDP_API_BASE_URL" => nil) do
+        error = assert_raises(Sdp::ConfigurationError) do
+          Sdp::Client.new(base_url: "", api_key: "test-key")
+        end
+        assert_match(/SDP_API_BASE_URL/, error.message)
+      end
+    end
+
+    def test_non_url_base_url_raises_configuration_error
+      with_env("SDP_API_BASE_URL" => nil) do
+        assert_raises(Sdp::ConfigurationError) do
+          Sdp::Client.new(base_url: "not-a-url", api_key: "test-key")
+        end
+      end
+    end
+
     def test_api_key_and_base_url_fall_back_to_env
       with_env("SDP_API_KEY" => "env-key", "SDP_API_BASE_URL" => "http://env.test:9999") do
         client = Sdp::Client.new
@@ -240,6 +275,78 @@ module Sdp
       stub_request(:post, WALLETS_URL).to_raise(Errno::ECONNREFUSED)
 
       assert_raises(Sdp::Unavailable) { @client.post("/v1/wallets", {}) }
+    end
+
+    # -- method-aware transport mapping (double-spend hazard) -------------------
+
+    # A live-socket failure (reset/EOF/broken pipe) is safe to retry on a GET
+    # but has an unknown outcome on a POST — the body may already have been
+    # processed — so the two methods must map to different typed errors.
+    def test_post_connection_reset_raises_timeout_not_unavailable
+      stub_request(:post, TRANSFERS_URL).to_raise(Errno::ECONNRESET)
+
+      error = assert_raises(Sdp::Timeout) do
+        @client.post("/v1/payments/transfers", { amount: "1" })
+      end
+      refute_instance_of Sdp::Unavailable, error
+    end
+
+    def test_get_connection_reset_raises_unavailable_and_retries
+      stub = stub_request(:get, WALLETS_URL).to_raise(Errno::ECONNRESET)
+
+      error = assert_raises(Sdp::Unavailable) { @client.get("/v1/wallets") }
+      refute_instance_of Sdp::Timeout, error
+      assert_requested(stub, times: 2)
+    end
+
+    def test_post_eof_raises_timeout
+      stub_request(:post, TRANSFERS_URL).to_raise(EOFError)
+
+      assert_raises(Sdp::Timeout) { @client.post("/v1/payments/transfers", { amount: "1" }) }
+    end
+
+    def test_ssl_error_raises_unavailable
+      stub_request(:post, TRANSFERS_URL).to_raise(OpenSSL::SSL::SSLError)
+
+      assert_raises(Sdp::Unavailable) { @client.post("/v1/payments/transfers", { amount: "1" }) }
+    end
+
+    # -- malformed 2xx body ----------------------------------------------------
+
+    def test_non_empty_unparseable_2xx_body_raises_unavailable
+      stub_request(:get, WALLETS_URL)
+        .to_return(status: 200, headers: json_headers, body: "{ truncated json")
+
+      error = assert_raises(Sdp::Unavailable) { @client.get("/v1/wallets") }
+      assert_match(/malformed response/i, error.message)
+    end
+
+    # FL-10: the provisioning-gate 400 is scoped to the wallet-create endpoint.
+    # The same message on any other endpoint must stay a plain BadRequest, not
+    # get reframed as a custody-provider capability gate.
+    def test_provisioning_gate_message_on_non_wallet_endpoint_stays_bad_request
+      stub_request(:post, TRANSFERS_URL)
+        .to_return(status: 400, headers: json_headers,
+                   body: error_body("BAD_REQUEST", "Wallet provisioning not supported for provider: native"))
+
+      error = assert_raises(Sdp::BadRequest) do
+        @client.post("/v1/payments/transfers", { amount: "1" })
+      end
+      refute_instance_of Sdp::ProviderCapabilityError, error
+    end
+
+    # FIX 7: a 202 can carry a data envelope (no error object). The pending
+    # transfer's id must still be recoverable from the rescued exception.
+    def test_202_with_data_envelope_attaches_transfer_id_as_details
+      stub_request(:post, TRANSFERS_URL)
+        .to_return(status: 202, headers: json_headers,
+                   body: { data: { transferId: "tr_pending_1" }, meta: { requestId: "req-202" } }.to_json)
+
+      error = assert_raises(Sdp::SigningPending) do
+        @client.post("/v1/payments/transfers", { amount: "1" })
+      end
+      assert_equal 202, error.http_status
+      assert_equal "tr_pending_1", error.details[:transfer_id]
     end
 
     # -- retry policy ----------------------------------------------------------

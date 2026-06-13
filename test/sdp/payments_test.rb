@@ -161,6 +161,48 @@ module Sdp
       assert_equal "sigA", transfer.signature
     end
 
+    # -- fix A: empty 2xx body → all-nil struct, no NoMethodError -----------------
+
+    def test_create_transfer_empty_200_body_returns_all_nil_transfer_struct
+      stub_request(:post, TRANSFERS_URL)
+        .to_return(status: 200, body: "")
+
+      transfer = @client.create_transfer(source: "wal_a", destination: "dest", amount: "1")
+
+      assert_instance_of Sdp::Transfer, transfer
+      assert_nil transfer.id
+      assert_nil transfer.status
+    end
+
+    def test_get_transfer_empty_200_body_returns_all_nil_transfer_struct
+      stub_request(:get, "#{TRANSFERS_URL}/tr_empty")
+        .to_return(status: 200, body: "")
+
+      transfer = @client.get_transfer("tr_empty")
+
+      assert_instance_of Sdp::Transfer, transfer
+      assert_nil transfer.id
+      assert_nil transfer.status
+    end
+
+    # -- fix B: id-in-path percent-encoding -------------------------------------
+
+    def test_get_transfer_percent_encodes_space_in_id
+      stub = stub_request(:get, "#{TRANSFERS_URL}/tr%201")
+        .to_return(status: 200, headers: json_headers, body: transfer_body("tr 1"))
+
+      @client.get_transfer("tr 1")
+      assert_requested(stub)
+    end
+
+    def test_get_transfer_percent_encodes_query_chars_in_id
+      stub = stub_request(:get, "#{TRANSFERS_URL}/tr%3Fx%3D1")
+        .to_return(status: 200, headers: json_headers, body: transfer_body("tr?x=1"))
+
+      @client.get_transfer("tr?x=1")
+      assert_requested(stub)
+    end
+
     # -- omitted optional fields (SDP omits, never nulls) -----------------------
 
     def test_transfer_with_omitted_optional_fields_builds_struct_with_nils

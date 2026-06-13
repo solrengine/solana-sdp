@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "uri"
+
 module Sdp
   # A transfer as SDP reports it. SDP omits optional fields entirely —
   # source/destination/amount/memo can be ABSENT from the JSON, not null —
@@ -54,7 +56,9 @@ module Sdp
       # an SPL mint address.
       def create_transfer(source:, destination:, amount:, token: "SOL", memo: nil)
         response = post("/v1/payments/transfers", transfer_payload(source, destination, amount, token, memo))
-        Transfer.from_hash(response.data[:transfer] || response.data)
+        data = response.data
+        src = data.is_a?(Hash) ? (data[:transfer] || data) : data
+        Transfer.from_hash(src)
       end
 
       # POST /v1/payments/transfers/prepare → Sdp::PreparedTransfer
@@ -98,8 +102,10 @@ module Sdp
 
       # GET /v1/payments/transfers/:id → Sdp::Transfer
       def get_transfer(transfer_id)
-        response = get("/v1/payments/transfers/#{transfer_id}")
-        Transfer.from_hash(response.data[:transfer] || response.data)
+        response = get("/v1/payments/transfers/#{encode_path_segment(transfer_id)}")
+        data = response.data
+        src = data.is_a?(Hash) ? (data[:transfer] || data) : data
+        Transfer.from_hash(src)
       end
 
       private
@@ -108,6 +114,10 @@ module Sdp
         payload = { source: source, destination: destination, token: token, amount: amount.to_s }
         payload[:memo] = memo if memo
         payload
+      end
+
+      def encode_path_segment(segment)
+        URI.encode_uri_component(segment.to_s)
       end
     end
   end

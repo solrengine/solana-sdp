@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "net/http"
+require "openssl"
 require "json"
 require "uri"
 
@@ -45,15 +46,38 @@ module Sdp
                    api_key: ENV["SDP_API_KEY"],
                    open_timeout: OPEN_TIMEOUT,
                    read_timeout: READ_TIMEOUT)
-      if api_key.to_s.strip.empty?
+      # Strip first, then guard: an ENV key with a trailing newline passes a
+      # naive blank-check but then makes every request raise a raw ArgumentError
+      # from the "Bearer …\n" header. Normalize once, at the boundary.
+      @api_key = api_key.to_s.strip
+      if @api_key.empty?
         raise ConfigurationError, "SDP_API_KEY is missing or blank. " \
           "Pass api_key: or set the SDP_API_KEY environment variable."
       end
 
       @base_url = base_url.to_s.chomp("/")
-      @api_key = api_key
+      # base_url is documented as ConfigurationError-covered, so validate it at
+      # boot (mirroring the api_key fail-fast) instead of letting an unusable
+      # URL surface as a cryptic transport error on the first request.
+      parsed = begin
+        URI.parse(@base_url)
+      rescue URI::InvalidURIError
+        nil
+      end
+      unless parsed.is_a?(URI::HTTP) && !parsed.host.to_s.empty?
+        raise ConfigurationError, "SDP_API_BASE_URL is invalid: expected an http(s) URL with a " \
+          "host, got #{@base_url.inspect}. Pass base_url: or set the SDP_API_BASE_URL environment variable."
+      end
+
       @open_timeout = open_timeout
       @read_timeout = read_timeout
+    end
+
+    # Redacted on purpose: the API key is a bearer secret and must never leak
+    # into consoles, logs, or exception-capture payloads via the default
+    # #inspect (which would dump every instance variable, @api_key included).
+    def inspect
+      "#<#{self.class} base_url=#{@base_url.inspect}>"
     end
 
     # Request primitives — the internal API the resource modules build on.
@@ -64,7 +88,7 @@ module Sdp
     def get(path, query: nil)
       uri = build_uri(path, query)
       with_read_retry do
-        perform(Net::HTTP::Get.new(uri), uri)
+        perform(Net::HTTP::Get.new(uri), uri, idempotent: true)
       end
     end
 
@@ -73,7 +97,7 @@ module Sdp
       request = Net::HTTP::Post.new(uri)
       request["Content-Type"] = "application/json"
       request.body = JSON.generate(payload) unless payload.nil?
-      perform(request, uri) # no retry wrapper — writes are never retried
+      perform(request, uri, idempotent: false) # no retry wrapper — writes are never retried
     end
 
     private
@@ -89,7 +113,13 @@ module Sdp
       end
     end
 
-    def perform(request, uri)
+    # idempotent: is the safety hinge. A GET can be re-sent freely, so any
+    # transport failure on it is "unreachable" (Unavailable, retryable). A POST
+    # has no upstream idempotency key, so once the socket was live we cannot
+    # know whether the transfer was processed — those failures must surface as
+    # the unknown-outcome Timeout (reconcile before re-sending), never as a
+    # retryable Unavailable that would risk a double-spend.
+    def perform(request, uri, idempotent:)
       request["Authorization"] = "Bearer #{@api_key}"
       request["Accept"] = "application/json"
 
@@ -104,12 +134,29 @@ module Sdp
     rescue Net::OpenTimeout => e
       # The TCP connection never opened — the request was definitely not
       # sent, so this is "unreachable" (safe to retry/fall back), never the
-      # unknown-outcome Timeout that triggers transfer reconciliation.
+      # unknown-outcome Timeout that triggers transfer reconciliation. Holds
+      # for POSTs too: nothing crossed the wire.
       raise Sdp::Unavailable.new("SDP unreachable (connect timeout): #{e.message}", http_status: nil)
     rescue Net::ReadTimeout => e
+      # The request was fully sent and we timed out awaiting the response —
+      # the outcome is unknown for everyone, so always Timeout.
       raise Sdp::Timeout.new("SDP request timed out: #{e.message}", http_status: nil)
-    rescue Errno::ECONNREFUSED, Errno::ECONNRESET, Errno::EHOSTUNREACH, SocketError, EOFError => e
+    rescue Errno::ECONNREFUSED, Errno::EHOSTUNREACH, SocketError,
+           OpenSSL::SSL::SSLError, Errno::ETIMEDOUT => e
+      # Connection never established / DNS failure / TLS handshake failure /
+      # connect-phase timeout — all provably pre-send, so the request was not
+      # processed. Safe to retry regardless of method.
       raise Sdp::Unavailable.new("SDP unreachable: #{e.message}", http_status: nil)
+    rescue Errno::ECONNRESET, EOFError, Errno::EPIPE, Net::WriteTimeout => e
+      # The socket was live (reset/EOF/broken-pipe/write-timeout). For a GET
+      # this is still safe to retry. For a POST the reset can land AFTER the
+      # body was delivered and processed — outcome unknown — so it must map to
+      # Timeout (reconcile), not the retryable Unavailable.
+      if idempotent
+        raise Sdp::Unavailable.new("SDP unreachable: #{e.message}", http_status: nil)
+      else
+        raise Sdp::Timeout.new("SDP write failed mid-flight, outcome unknown: #{e.message}", http_status: nil)
+      end
     end
 
     def build_uri(path, query)
@@ -131,6 +178,15 @@ module Sdp
       raise_typed_error(status, body, path) if status == 202
 
       if (200..299).cover?(status)
+        # parse_body returns nil both for an empty body (204, fine) and for a
+        # non-empty body that failed to parse. The latter must not slip through
+        # as Response(data: nil) — that NoMethodErrors later in resource
+        # readers. Distinguish the two by the raw body and raise a typed error
+        # for the truncated/unparseable case.
+        if body.nil? && !response.body.to_s.empty?
+          raise Sdp::Unavailable.new("malformed response from SDP (unparseable body)", http_status: status)
+        end
+
         data = body.is_a?(Hash) && body.key?("data") ? body["data"] : body
         meta = body.is_a?(Hash) ? body["meta"] : nil
         return Response.new(data: symbolize(data), meta: symbolize(meta))
@@ -150,7 +206,15 @@ module Sdp
       error = body.is_a?(Hash) ? body["error"] : nil
       code = error.is_a?(Hash) ? error["code"] : nil
       message = (error.is_a?(Hash) && error["message"]) || "SDP request failed (HTTP #{status})"
-      details = error.is_a?(Hash) ? symbolize(error["details"]) : nil
+      details =
+        if error.is_a?(Hash)
+          symbolize(error["details"])
+        elsif body.is_a?(Hash) && body.key?("data")
+          # A 202 (or similar) can carry a data envelope rather than an error
+          # object (e.g. a pending transfer's id). Surface that as details so
+          # the rescued SigningPending can recover the transferId.
+          symbolize(body["data"])
+        end
       meta = body.is_a?(Hash) ? symbolize(body["meta"]) : nil
 
       klass = error_class_for(status, code)
@@ -165,7 +229,8 @@ module Sdp
     # message is preserved and the fix is appended, so logs keep the
     # original evidence.
     def capability_gate(klass, status, code, message, path)
-      if status == 400 && message.to_s.match?(Sdp::ProviderCapabilityError::PROVISIONING_GATE_PATTERN)
+      if status == 400 && path.to_s.end_with?("/v1/wallets") &&
+         message.to_s.match?(Sdp::ProviderCapabilityError::PROVISIONING_GATE_PATTERN)
         [ Sdp::ProviderCapabilityError,
           "#{message} — local custody holds a single root wallet; Wallet-per-User requires a " \
           "managed provider (e.g. privy) — set provider: on create_wallet or SDP_CUSTODY_PROVIDER." ]
