@@ -43,9 +43,9 @@ module Sdp
       end
     end
 
-    def test_coverage_map_lists_the_eight_covered_operations
+    def test_coverage_map_lists_the_covered_operations
       operations = Sdp::Coverage::COVERED_ENDPOINTS.map { |e| [ e.method, e.path ] }
-      assert_equal 8, operations.size
+      assert_equal 17, operations.size # 8 wallets/payments + 9 issuance (v0.2)
       assert_equal operations.uniq, operations
     end
   end

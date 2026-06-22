@@ -9,6 +9,7 @@ require_relative "errors"
 require_relative "pagination"
 require_relative "resources/wallets"
 require_relative "resources/payments"
+require_relative "resources/issuance"
 
 module Sdp
   # Zero-dependency Net::HTTP request core for the SDP API.
@@ -25,6 +26,7 @@ module Sdp
   class Client
     include Resources::Wallets
     include Resources::Payments
+    include Resources::Issuance
 
     DEFAULT_BASE_URL = "http://127.0.0.1:8787"
     OPEN_TIMEOUT = 2  # seconds — fail fast when the stack isn't up

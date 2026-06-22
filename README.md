@@ -118,7 +118,13 @@ Running against a different SDP version may work, but field shapes (e.g. `usdVal
 
 ## Scope
 
-This gem covers SDP's wallets and payments surface: custody initialization, wallet provisioning and listing, balances, and transfers (create/prepare/list/get). Ramps, issuance, and the dashboard APIs are out of scope.
+This gem covers SDP's wallets, payments, and token-issuance surface:
+
+- **Wallets** — custody initialization, wallet provisioning and listing, balances.
+- **Payments** — transfers (create / prepare / list / get).
+- **Issuance** (token lifecycle) — tokens (list / get / create / deploy) and supply actions (mint / burn), each action with a `prepare` variant for caller-signed flows.
+
+The issuance compliance actions (freeze/unfreeze, pause, authority, allowlist, seize, force-burn), ramps, and the dashboard APIs are out of scope.
 
 A Rails engine builds on this client — Wallet-per-User provisioning, transfer persistence, and realtime balance updates — as [solrengine-sdp](https://github.com/solrengine/sdp).
 

@@ -21,6 +21,15 @@ module Sdp
     BALANCE_FIELDS = %w[token mint amount uiAmount decimals usdValue].freeze
     # Fields read by Sdp::Transfer.from_hash.
     TRANSFER_FIELDS = %w[id direction status signature token amount source destination memo error createdAt].freeze
+    # Fields read by Sdp::Token.from_hash. extensions is passed through untyped.
+    TOKEN_FIELDS = %w[id projectId signingWalletId mintAddress mintAuthority freezeAuthority name symbol
+                      decimals description uri imageUrl template extensions totalSupply maxSupply isMintable
+                      isFreezable requiresAllowlist status deployedAt createdAt updatedAt].freeze
+    # Fields read by Sdp::TokenTransaction.from_hash (the mint/burn action record).
+    TOKEN_TX_FIELDS = %w[id tokenId type status signature serializedTx params slot blockTime fee error
+                         createdAt updatedAt].freeze
+    # The unsigned-transaction envelope shared by the .../prepare responses.
+    PREPARED_TX_FIELDS = %w[serialized blockhash lastValidBlockHeight].freeze
 
     COVERED_ENDPOINTS = [
       # NOTE: at v0.28 the initialize 201 response has NO data envelope —
@@ -43,7 +52,39 @@ module Sdp
       Endpoint.new(method: "get", path: "/v1/payments/transfers", success_status: "200",
                    reads: { [ "data", "[]" ] => TRANSFER_FIELDS }),
       Endpoint.new(method: "get", path: "/v1/payments/transfers/{transferId}", success_status: "200",
-                   reads: { %w[data transfer] => TRANSFER_FIELDS })
+                   reads: { %w[data transfer] => TRANSFER_FIELDS }),
+
+      # Issuance — token lifecycle + supply actions (v0.2). list returns a bare
+      # data array; create/get/deploy wrap the token in data.token. mint/burn
+      # return the action record at data.transaction; mint also carries
+      # data.tokenAccount. The prepare variants differ: deploy/prepare puts the
+      # unsigned tx at data.transaction with a sibling data.mint, while
+      # mint/burn prepare keep the record at data.transaction and the unsigned
+      # tx at data.preparedTransaction.
+      Endpoint.new(method: "get", path: "/v1/issuance/tokens", success_status: "200",
+                   reads: { [ "data", "[]" ] => TOKEN_FIELDS }),
+      Endpoint.new(method: "post", path: "/v1/issuance/tokens", success_status: "201",
+                   reads: { %w[data token] => TOKEN_FIELDS }),
+      Endpoint.new(method: "get", path: "/v1/issuance/tokens/{tokenId}", success_status: "200",
+                   reads: { %w[data token] => TOKEN_FIELDS }),
+      Endpoint.new(method: "post", path: "/v1/issuance/tokens/{tokenId}/deploy", success_status: "200",
+                   reads: { %w[data token] => TOKEN_FIELDS }),
+      Endpoint.new(method: "post", path: "/v1/issuance/tokens/{tokenId}/deploy/prepare", success_status: "200",
+                   reads: { %w[data] => %w[transaction mint simulation],
+                            %w[data transaction] => PREPARED_TX_FIELDS }),
+      Endpoint.new(method: "post", path: "/v1/issuance/tokens/{tokenId}/mint", success_status: "200",
+                   reads: { %w[data] => %w[transaction tokenAccount],
+                            %w[data transaction] => TOKEN_TX_FIELDS }),
+      Endpoint.new(method: "post", path: "/v1/issuance/tokens/{tokenId}/mint/prepare", success_status: "200",
+                   reads: { %w[data] => %w[transaction preparedTransaction tokenAccount simulation],
+                            %w[data transaction] => TOKEN_TX_FIELDS,
+                            %w[data preparedTransaction] => PREPARED_TX_FIELDS }),
+      Endpoint.new(method: "post", path: "/v1/issuance/tokens/{tokenId}/burn", success_status: "200",
+                   reads: { %w[data transaction] => TOKEN_TX_FIELDS }),
+      Endpoint.new(method: "post", path: "/v1/issuance/tokens/{tokenId}/burn/prepare", success_status: "200",
+                   reads: { %w[data] => %w[transaction preparedTransaction simulation],
+                            %w[data transaction] => TOKEN_TX_FIELDS,
+                            %w[data preparedTransaction] => PREPARED_TX_FIELDS })
     ].freeze
 
     class << self
