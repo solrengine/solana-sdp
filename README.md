@@ -126,6 +126,8 @@ This gem covers SDP's wallets, payments, and token-issuance surface:
 
 The issuance compliance actions (freeze/unfreeze, pause, authority, allowlist, seize, force-burn), ramps, and the dashboard APIs are out of scope.
 
+> **Custodial issuance needs Kora.** `deploy_token`, `mint`, and `burn` are custodial sign-and-send and route through SDP's fee-payment adapter — like transfers, they require `FEE_PAYMENT_PROVIDER=kora` on a self-hosted SDP (the `native` adapter cannot submit transactions and returns a typed `Sdp::TransferExecutionError`). The `prepare_*` variants build an unsigned transaction and are unaffected.
+
 A Rails engine builds on this client — Wallet-per-User provisioning, transfer persistence, and realtime balance updates — as [solrengine-sdp](https://github.com/solrengine/sdp).
 
 ## See also

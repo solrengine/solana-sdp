@@ -207,6 +207,18 @@ module Sdp
       assert_nil tx.token_account
     end
 
+    def test_mint_non_hash_data_envelope_degrades_to_all_nil_not_typeerror
+      # A money-path write must never raise a raw TypeError on an off-shape 200.
+      stub_request(:post, "#{TOKENS_URL}/tok_1/mint")
+        .to_return(status: 200, headers: json_headers, body: { data: [ "unexpected" ], meta: {} }.to_json)
+
+      tx = @client.mint("tok_1", signing_wallet_id: "wal_a", destination: "Dest58", amount: "1")
+
+      assert_instance_of Sdp::TokenTransaction, tx
+      assert_nil tx.id
+      assert_nil tx.token_account
+    end
+
     def test_prepare_mint_returns_record_and_unsigned_envelope
       stub_request(:post, "#{TOKENS_URL}/tok_1/mint/prepare")
         .to_return(status: 200, headers: json_headers,
@@ -254,7 +266,9 @@ module Sdp
 
       prepared = @client.prepare_burn("tok_1", signing_wallet_id: "wal_a", source: "Src58", amount: "1")
 
+      assert_instance_of Sdp::PreparedTokenTransaction, prepared
       assert_equal "itx_pb1", prepared.transaction.id
+      assert_nil prepared.transaction.token_account # burn/prepare carries no token account, unlike mint
       assert_equal "AQ==burntx", prepared.serialized
       assert_equal 11, prepared.last_valid_block_height
     end
@@ -272,6 +286,26 @@ module Sdp
       end
       refute_instance_of Sdp::Unavailable, error
       assert_requested(stub, times: 1) # exactly one attempt — a re-sent mint risks a double-mint
+    end
+
+    # burn and deploy share the same money-path post() — the no-retry/Timeout
+    # guarantee the module comment claims for all three must hold for them too.
+    def test_burn_connection_reset_raises_timeout_and_is_not_retried
+      stub = stub_request(:post, "#{TOKENS_URL}/tok_1/burn").to_raise(Errno::ECONNRESET)
+
+      error = assert_raises(Sdp::Timeout) do
+        @client.burn("tok_1", signing_wallet_id: "wal_a", source: "Src58", amount: "1")
+      end
+      refute_instance_of Sdp::Unavailable, error
+      assert_requested(stub, times: 1)
+    end
+
+    def test_deploy_token_connection_reset_raises_timeout_and_is_not_retried
+      stub = stub_request(:post, "#{TOKENS_URL}/tok_1/deploy").to_raise(Errno::ECONNRESET)
+
+      error = assert_raises(Sdp::Timeout) { @client.deploy_token("tok_1") }
+      refute_instance_of Sdp::Unavailable, error
+      assert_requested(stub, times: 1)
     end
 
     # -- error path -------------------------------------------------------------

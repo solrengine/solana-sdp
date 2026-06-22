@@ -7,7 +7,7 @@ Gem::Specification.new do |spec|
   spec.email = [ "estoy@moviendo.me" ]
 
   spec.summary = "Ruby client for the Solana Developer Platform (SDP)"
-  spec.description = "Zero-dependency Net::HTTP client for SDP's wallets and payments API: typed errors, envelope unwrapping, and a safe retry posture."
+  spec.description = "Zero-dependency Net::HTTP client for SDP's wallets, payments, and token-issuance API: typed errors, envelope unwrapping, and a safe retry posture."
   spec.homepage = "https://github.com/solrengine/solana-sdp"
   spec.license = "MIT"
   spec.required_ruby_version = ">= 3.2.0"

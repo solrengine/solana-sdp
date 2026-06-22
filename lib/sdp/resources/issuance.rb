@@ -83,8 +83,11 @@ module Sdp
   # - deploy prepare → :transaction IS the unsigned tx envelope and the new
   #   mint address rides alongside under :mint (transaction is nil — there is no
   #   action record yet).
+  # The mint/burn associated token account lives on #transaction (TokenTransaction)
+  # when SDP returns one; deploy carries no action record. There is deliberately
+  # no top-level token_account — it would only ever duplicate transaction.token_account.
   PreparedTokenTransaction = Struct.new(:transaction, :serialized, :blockhash,
-                                        :last_valid_block_height, :mint, :token_account, :simulation,
+                                        :last_valid_block_height, :mint, :simulation,
                                         keyword_init: true) do
     def self.from_action(hash)
       hash ||= {}
@@ -95,7 +98,6 @@ module Sdp
         blockhash: prepared[:blockhash],
         last_valid_block_height: prepared[:last_valid_block_height],
         mint: nil,
-        token_account: hash[:token_account],
         simulation: hash[:simulation]
       )
     end
@@ -109,7 +111,6 @@ module Sdp
         blockhash: tx[:blockhash],
         last_valid_block_height: tx[:last_valid_block_height],
         mint: hash[:mint],
-        token_account: nil,
         simulation: hash[:simulation]
       )
     end
@@ -127,10 +128,10 @@ module Sdp
     module Issuance
       # GET /v1/issuance/tokens → Enumerator yielding Sdp::Token.
       # Auto-paginates on meta.hasMore (see Pagination); re-sends filters per
-      # page. Filters (camelCased on the wire): status:, template:, page:,
-      # page_size:.
-      def list_tokens(status: nil, template: nil, page: nil, page_size: nil)
-        query = { status: status, template: template, page: page, pageSize: page_size }.compact
+      # page. Filters (camelCased on the wire): status:, page:, page_size:.
+      # (SDP v0.28 documents no other query filters on this endpoint.)
+      def list_tokens(status: nil, page: nil, page_size: nil)
+        query = { status: status, page: page, pageSize: page_size }.compact
         Pagination.enumerate(self, "/v1/issuance/tokens", query) do |response|
           rows = response.data.is_a?(Array) ? response.data : []
           rows.map { |token| Token.from_hash(token) }
@@ -175,11 +176,11 @@ module Sdp
       # Custodial sign-and-send mint to destination; never retried. amount is a
       # base-units string. The associated token account is on #token_account.
       def mint(token_id, signing_wallet_id:, destination:, amount:, memo: nil)
-        data = post(mint_path(token_id), mint_payload(signing_wallet_id, destination, amount, memo)).data
-        TokenTransaction.from_hash(data && data[:transaction], token_account: data && data[:token_account])
+        action_result(post(mint_path(token_id), mint_payload(signing_wallet_id, destination, amount, memo)))
       end
 
       # POST /v1/issuance/tokens/:id/mint/prepare → Sdp::PreparedTokenTransaction
+      # Builds — does not sign or send — the mint tx for caller-signed flows.
       def prepare_mint(token_id, signing_wallet_id:, destination:, amount:, memo: nil)
         PreparedTokenTransaction.from_action(
           post("#{mint_path(token_id)}/prepare", mint_payload(signing_wallet_id, destination, amount, memo)).data
@@ -189,11 +190,11 @@ module Sdp
       # POST /v1/issuance/tokens/:id/burn → Sdp::TokenTransaction.
       # Custodial sign-and-send burn from source; never retried.
       def burn(token_id, signing_wallet_id:, source:, amount:, memo: nil)
-        data = post(burn_path(token_id), burn_payload(signing_wallet_id, source, amount, memo)).data
-        TokenTransaction.from_hash(data && data[:transaction])
+        action_result(post(burn_path(token_id), burn_payload(signing_wallet_id, source, amount, memo)))
       end
 
       # POST /v1/issuance/tokens/:id/burn/prepare → Sdp::PreparedTokenTransaction
+      # Builds — does not sign or send — the burn tx for caller-signed flows.
       def prepare_burn(token_id, signing_wallet_id:, source:, amount:, memo: nil)
         PreparedTokenTransaction.from_action(
           post("#{burn_path(token_id)}/prepare", burn_payload(signing_wallet_id, source, amount, memo)).data
@@ -207,6 +208,16 @@ module Sdp
       def token_node(response)
         data = response.data
         data.is_a?(Hash) ? (data[:token] || data) : data
+      end
+
+      # mint/burn wrap the action record in data.transaction (mint also carries a
+      # sibling data.tokenAccount). Guard the envelope to a Hash so a money-path
+      # response that comes back off-shape or empty degrades to an all-nil struct
+      # rather than raising a raw TypeError mid-reconcile.
+      def action_result(response)
+        data = response.data
+        data = {} unless data.is_a?(Hash)
+        TokenTransaction.from_hash(data[:transaction], token_account: data[:token_account])
       end
 
       def mint_payload(signing_wallet_id, destination, amount, memo)
