@@ -4,6 +4,7 @@ require "net/http"
 require "openssl"
 require "json"
 require "uri"
+require "bigdecimal"
 
 require_relative "errors"
 require_relative "pagination"
@@ -300,6 +301,25 @@ module Sdp
 
     def underscore_key(key)
       key.to_s.gsub(/([a-z\d])([A-Z])/, '\1_\2').downcase.to_sym
+    end
+
+    # Shared resource helpers — defined once on the HTTP layer the resource
+    # modules mix into, rather than duplicated per module.
+
+    # Percent-encode a caller-supplied id before interpolating it into a path.
+    def encode_path_segment(segment)
+      URI.encode_uri_component(segment.to_s)
+    end
+
+    # Serialize a money amount to a plain decimal string. Integer/String pass
+    # through unchanged (Integer#to_s never uses scientific notation); a Float
+    # is routed through BigDecimal so a small value like 1e-07 serializes as
+    # "0.0000001" rather than "1.0e-07", which SDP rejects. Prefer passing
+    # base-unit amounts as strings — Floats are lossy.
+    def amount_string(amount)
+      return amount.to_s unless amount.is_a?(Float)
+
+      BigDecimal(amount.to_s).to_s("F")
     end
   end
 end

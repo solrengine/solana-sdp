@@ -95,12 +95,6 @@ module Sdp
         container = data.is_a?(Hash) ? (data[:wallet_balances] || data) : {}
         (container[:balances] || []).map { |balance| Balance.from_hash(balance) }
       end
-
-      private
-
-      def encode_path_segment(segment)
-        URI.encode_uri_component(segment.to_s)
-      end
     end
   end
 end

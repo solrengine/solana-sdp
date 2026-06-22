@@ -1,6 +1,6 @@
 # solana-sdp
 
-Ruby SDK for the [Solana Developer Platform](https://github.com/solana-foundation/solana-developer-platform) (SDP) wallets, payments, and token-issuance API.
+Ruby SDK for the [Solana Developer Platform](https://github.com/solana-foundation/solana-developer-platform) (SDP) wallets, payments, token-issuance, and ramp APIs.
 
 Plain Ruby, zero runtime dependencies (`Net::HTTP`), typed rescuable errors that mirror SDP's real failure modes, and a retry posture that never re-sends a transfer.
 
@@ -139,7 +139,7 @@ Running against a different SDP version may work, but field shapes (e.g. `usdVal
 
 ## Scope
 
-This gem covers SDP's wallets, payments, and token-issuance surface:
+This gem covers SDP's wallets, payments, token-issuance, and ramp surface:
 
 - **Wallets** — custody initialization, wallet provisioning and listing, balances.
 - **Payments** — transfers (create / prepare / list / get).
@@ -148,7 +148,7 @@ This gem covers SDP's wallets, payments, and token-issuance surface:
 
 The issuance compliance actions (freeze/unfreeze, pause, authority, allowlist, seize, force-burn) and the dashboard APIs are out of scope.
 
-> **Custodial issuance needs Kora.** `deploy_token`, `mint`, and `burn` are custodial sign-and-send and route through SDP's fee-payment adapter — like transfers, they require `FEE_PAYMENT_PROVIDER=kora` on a self-hosted SDP (the `native` adapter cannot submit transactions and returns a typed `Sdp::TransferExecutionError`). The `prepare_*` variants build an unsigned transaction and are unaffected.
+> **Custodial issuance needs Kora.** `deploy_token`, `mint_token`, and `burn_token` are custodial sign-and-send and route through SDP's fee-payment adapter — like transfers, they require `FEE_PAYMENT_PROVIDER=kora` on a self-hosted SDP (the `native` adapter cannot submit transactions and returns a typed `Sdp::TransferExecutionError`). The `prepare_*` variants build an unsigned transaction and are unaffected.
 
 A Rails engine builds on this client — Wallet-per-User provisioning, transfer persistence, and realtime balance updates — as [solrengine-sdp](https://github.com/solrengine/sdp).
 

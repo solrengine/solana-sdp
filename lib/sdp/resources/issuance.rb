@@ -168,7 +168,7 @@ module Sdp
       # POST /v1/issuance/tokens/:id/deploy/prepare → Sdp::PreparedTokenTransaction
       # Builds — does not send — the deploy tx for caller-signed flows; the new
       # mint address is on #mint.
-      def prepare_deploy(token_id)
+      def prepare_deploy_token(token_id)
         PreparedTokenTransaction.from_deploy(post("#{deploy_path(token_id)}/prepare").data)
       end
 
@@ -183,7 +183,7 @@ module Sdp
 
       # POST /v1/issuance/tokens/:id/mint/prepare → Sdp::PreparedTokenTransaction
       # Builds — does not sign or send — the mint tx for caller-signed flows.
-      def prepare_mint(token_id, signing_wallet_id:, destination:, amount:, memo: nil)
+      def prepare_mint_token(token_id, signing_wallet_id:, destination:, amount:, memo: nil)
         PreparedTokenTransaction.from_action(
           post("#{mint_path(token_id)}/prepare", mint_payload(signing_wallet_id, destination, amount, memo)).data
         )
@@ -197,7 +197,7 @@ module Sdp
 
       # POST /v1/issuance/tokens/:id/burn/prepare → Sdp::PreparedTokenTransaction
       # Builds — does not sign or send — the burn tx for caller-signed flows.
-      def prepare_burn(token_id, signing_wallet_id:, source:, amount:, memo: nil)
+      def prepare_burn_token(token_id, signing_wallet_id:, source:, amount:, memo: nil)
         PreparedTokenTransaction.from_action(
           post("#{burn_path(token_id)}/prepare", burn_payload(signing_wallet_id, source, amount, memo)).data
         )
@@ -223,13 +223,13 @@ module Sdp
       end
 
       def mint_payload(signing_wallet_id, destination, amount, memo)
-        mint = { destination: destination, amount: amount.to_s }
+        mint = { destination: destination, amount: amount_string(amount) }
         mint[:memo] = memo if memo
         { signingWalletId: signing_wallet_id, mint: mint }
       end
 
       def burn_payload(signing_wallet_id, source, amount, memo)
-        burn = { source: source, amount: amount.to_s }
+        burn = { source: source, amount: amount_string(amount) }
         burn[:memo] = memo if memo
         { signingWalletId: signing_wallet_id, burn: burn }
       end
@@ -244,10 +244,6 @@ module Sdp
 
       def burn_path(token_id)
         "/v1/issuance/tokens/#{encode_path_segment(token_id)}/burn"
-      end
-
-      def encode_path_segment(segment)
-        URI.encode_uri_component(segment.to_s)
       end
     end
   end

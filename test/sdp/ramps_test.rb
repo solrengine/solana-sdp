@@ -178,6 +178,30 @@ module Sdp
       assert_requested(stub, times: 1) # a re-sent ramp moves money twice
     end
 
+    def test_offramp_execute_connection_reset_raises_timeout_and_is_not_retried
+      stub = stub_request(:post, "#{RAMPS}/offramp/execute").to_raise(Errno::ECONNRESET)
+
+      error = assert_raises(Sdp::Timeout) do
+        @client.offramp_execute(provider: "bvnk", counterparty_id: "cp_1", source_wallet: "wal_a",
+                                crypto_token: "SOL", fiat_currency: "USD", crypto_amount: "1")
+      end
+      refute_instance_of Sdp::Unavailable, error
+      assert_requested(stub, times: 1)
+    end
+
+    # -- amount serialization (no scientific notation on the wire) ---------------
+
+    def test_offramp_execute_serializes_tiny_float_amount_without_scientific_notation
+      stub = stub_request(:post, "#{RAMPS}/offramp/execute")
+        .with(body: hash_including({ "cryptoAmount" => "0.0000001" })) # not "1.0e-07"
+        .to_return(status: 200, headers: json_headers,
+                   body: { data: { ramp: { id: "rmp_f" } }, meta: {} }.to_json)
+
+      @client.offramp_execute(provider: "bvnk", counterparty_id: "cp_1", source_wallet: "wal_a",
+                              crypto_token: "SOL", fiat_currency: "USD", crypto_amount: 0.0000001)
+      assert_requested(stub)
+    end
+
     # -- error path -------------------------------------------------------------
 
     def test_quote_for_unsupported_pair_surfaces_bad_request

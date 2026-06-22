@@ -153,7 +153,7 @@ module Sdp
                                    mint: "Mint58", simulation: { success: true } },
                            meta: {} }.to_json)
 
-      prepared = @client.prepare_deploy("tok_1")
+      prepared = @client.prepare_deploy_token("tok_1")
 
       assert_instance_of Sdp::PreparedTokenTransaction, prepared
       assert_nil prepared.transaction # deploy/prepare carries no action record
@@ -207,6 +207,17 @@ module Sdp
       assert_nil tx.token_account
     end
 
+    def test_mint_serializes_tiny_float_amount_without_scientific_notation
+      stub = stub_request(:post, "#{TOKENS_URL}/tok_1/mint")
+        .with(body: { signingWalletId: "wal_a",
+                      mint: { destination: "Dest58", amount: "0.0000001" } }) # not "1.0e-07"
+        .to_return(status: 200, headers: json_headers,
+                   body: { data: { transaction: tx_hash("itx_f") }, meta: {} }.to_json)
+
+      @client.mint_token("tok_1", signing_wallet_id: "wal_a", destination: "Dest58", amount: 0.0000001)
+      assert_requested(stub)
+    end
+
     def test_mint_non_hash_data_envelope_degrades_to_all_nil_not_typeerror
       # A money-path write must never raise a raw TypeError on an off-shape 200.
       stub_request(:post, "#{TOKENS_URL}/tok_1/mint")
@@ -228,7 +239,7 @@ module Sdp
                                    tokenAccount: "Ata58", simulation: { success: true } },
                            meta: {} }.to_json)
 
-      prepared = @client.prepare_mint("tok_1", signing_wallet_id: "wal_a", destination: "Dest58", amount: "1")
+      prepared = @client.prepare_mint_token("tok_1", signing_wallet_id: "wal_a", destination: "Dest58", amount: "1")
 
       assert_instance_of Sdp::PreparedTokenTransaction, prepared
       assert_instance_of Sdp::TokenTransaction, prepared.transaction
@@ -264,7 +275,7 @@ module Sdp
                                    simulation: { success: true } },
                            meta: {} }.to_json)
 
-      prepared = @client.prepare_burn("tok_1", signing_wallet_id: "wal_a", source: "Src58", amount: "1")
+      prepared = @client.prepare_burn_token("tok_1", signing_wallet_id: "wal_a", source: "Src58", amount: "1")
 
       assert_instance_of Sdp::PreparedTokenTransaction, prepared
       assert_equal "itx_pb1", prepared.transaction.id

@@ -92,7 +92,7 @@ module Sdp
                        fiat_currency:, fiat_amount:, redirect_url: nil, collected_data: nil)
         payload = {
           provider: provider, counterpartyId: counterparty_id, destinationWallet: destination_wallet,
-          cryptoToken: crypto_token, fiatCurrency: fiat_currency, fiatAmount: fiat_amount.to_s,
+          cryptoToken: crypto_token, fiatCurrency: fiat_currency, fiatAmount: amount_string(fiat_amount),
           redirectUrl: redirect_url, collectedData: collected_data
         }.compact
         RampQuote.from_hash(ramp_record(post("/v1/payments/ramps/onramp/quote", payload).data, :quote))
@@ -105,7 +105,7 @@ module Sdp
                          fiat_currency:, fiat_amount:, kyc_reference: nil, redirect_url: nil, compliance: nil)
         payload = {
           provider: provider, counterpartyId: counterparty_id, destinationWallet: destination_wallet,
-          cryptoToken: crypto_token, fiatCurrency: fiat_currency, fiatAmount: fiat_amount.to_s,
+          cryptoToken: crypto_token, fiatCurrency: fiat_currency, fiatAmount: amount_string(fiat_amount),
           kycReference: kyc_reference, redirectUrl: redirect_url, bvnkCompliance: compliance
         }.compact
         RampExecution.from_hash(ramp_record(post("/v1/payments/ramps/onramp/execute", payload).data, :ramp))
@@ -117,7 +117,7 @@ module Sdp
                           fiat_currency:, crypto_amount:, kyc_reference: nil, redirect_url: nil, compliance: nil)
         payload = {
           provider: provider, counterpartyId: counterparty_id, sourceWallet: source_wallet,
-          cryptoToken: crypto_token, fiatCurrency: fiat_currency, cryptoAmount: crypto_amount.to_s,
+          cryptoToken: crypto_token, fiatCurrency: fiat_currency, cryptoAmount: amount_string(crypto_amount),
           kycReference: kyc_reference, redirectUrl: redirect_url, bvnkCompliance: compliance
         }.compact
         RampExecution.from_hash(ramp_record(post("/v1/payments/ramps/offramp/execute", payload).data, :ramp))
@@ -125,8 +125,9 @@ module Sdp
 
       # POST /v1/payments/ramps/sandbox/simulate → the simulated transaction (Hash passthrough, nil if absent).
       # Sandbox-only test hook: advances a sandbox ramp to a terminal state.
-      # payload is forwarded as-is (SDP leaves the body provider-shaped).
-      def simulate_ramp(payload = {})
+      # Keyword args are forwarded verbatim (no camelCase conversion) — SDP
+      # leaves the body provider-shaped, so pass the keys SDP expects.
+      def simulate_ramp(**payload)
         data = post("/v1/payments/ramps/sandbox/simulate", payload).data
         data.is_a?(Hash) ? data[:transaction] : nil
       end
