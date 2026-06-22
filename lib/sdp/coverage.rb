@@ -30,6 +30,13 @@ module Sdp
                          createdAt updatedAt].freeze
     # The unsigned-transaction envelope shared by the .../prepare responses.
     PREPARED_TX_FIELDS = %w[serialized blockhash lastValidBlockHeight].freeze
+    # Fields read by Sdp::RampQuote.from_hash. The *Currency members are passed
+    # through untyped, so only their presence at data.quote is pinned.
+    RAMP_QUOTE_FIELDS = %w[id provider status deliveryMode hostedUrl paymentInstructions exchangeRate
+                           totalSendingAmount sendingCurrency totalReceivingAmount receivingCurrency
+                           feesIncluded feeCurrency expiresAt].freeze
+    # Fields read by Sdp::RampExecution.from_hash.
+    RAMP_EXECUTION_FIELDS = %w[id provider status redirectUrl paymentInstructions reference].freeze
 
     COVERED_ENDPOINTS = [
       # NOTE: at v0.31 the initialize 201 response has NO data envelope —
@@ -84,7 +91,27 @@ module Sdp
       Endpoint.new(method: "post", path: "/v1/issuance/tokens/{tokenId}/burn/prepare", success_status: "200",
                    reads: { %w[data] => %w[transaction preparedTransaction simulation],
                             %w[data transaction] => TOKEN_TX_FIELDS,
-                            %w[data preparedTransaction] => PREPARED_TX_FIELDS })
+                            %w[data preparedTransaction] => PREPARED_TX_FIELDS }),
+
+      # Ramps (v0.2, sandbox-only). currency endpoints return nested discovery
+      # data; quote wraps the record in data.quote, execute in data.ramp; the
+      # sandbox hook returns data.transaction (untyped passthrough).
+      Endpoint.new(method: "get", path: "/v1/payments/ramps/onramp/currency", success_status: "200",
+                   reads: { %w[data] => %w[currencies pairs supportHash],
+                            %w[data currencies] => %w[sources destinations],
+                            [ "data", "pairs", "[]" ] => %w[source dest providers] }),
+      Endpoint.new(method: "get", path: "/v1/payments/ramps/offramp/currency", success_status: "200",
+                   reads: { %w[data] => %w[currencies pairs supportHash],
+                            %w[data currencies] => %w[sources destinations],
+                            [ "data", "pairs", "[]" ] => %w[source dest providers] }),
+      Endpoint.new(method: "post", path: "/v1/payments/ramps/onramp/quote", success_status: "200",
+                   reads: { %w[data quote] => RAMP_QUOTE_FIELDS }),
+      Endpoint.new(method: "post", path: "/v1/payments/ramps/onramp/execute", success_status: "200",
+                   reads: { %w[data ramp] => RAMP_EXECUTION_FIELDS }),
+      Endpoint.new(method: "post", path: "/v1/payments/ramps/offramp/execute", success_status: "200",
+                   reads: { %w[data ramp] => RAMP_EXECUTION_FIELDS }),
+      Endpoint.new(method: "post", path: "/v1/payments/ramps/sandbox/simulate", success_status: "200",
+                   reads: { %w[data] => %w[transaction] })
     ].freeze
 
     class << self

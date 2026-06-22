@@ -123,8 +123,9 @@ This gem covers SDP's wallets, payments, and token-issuance surface:
 - **Wallets** — custody initialization, wallet provisioning and listing, balances.
 - **Payments** — transfers (create / prepare / list / get).
 - **Issuance** (token lifecycle) — tokens (list / get / create / deploy) and supply actions (mint / burn), each action with a `prepare` variant for caller-signed flows.
+- **Ramps** *(sandbox-only)* — fiat on/off-ramps: currency discovery, on-ramp quote, on/off-ramp execute, and the sandbox `simulate` hook. **Wired against SDP's ramp surface and verified against the sandbox, not live fiat rails** — treat as preview in v0.2.
 
-The issuance compliance actions (freeze/unfreeze, pause, authority, allowlist, seize, force-burn), ramps, and the dashboard APIs are out of scope.
+The issuance compliance actions (freeze/unfreeze, pause, authority, allowlist, seize, force-burn) and the dashboard APIs are out of scope.
 
 > **Custodial issuance needs Kora.** `deploy_token`, `mint`, and `burn` are custodial sign-and-send and route through SDP's fee-payment adapter — like transfers, they require `FEE_PAYMENT_PROVIDER=kora` on a self-hosted SDP (the `native` adapter cannot submit transactions and returns a typed `Sdp::TransferExecutionError`). The `prepare_*` variants build an unsigned transaction and are unaffected.
 
