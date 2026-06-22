@@ -65,7 +65,7 @@ module Sdp
 
       # GET /v1/wallets → [Sdp::Wallet, ...]
       # Filters (camelCased on the wire): provider:, project_id:,
-      # include_balances:. Not paginated at v0.28 — the whole list comes back
+      # include_balances:. Not paginated at v0.31 — the whole list comes back
       # in one response — but routed through Pagination.enumerate so a
       # paginated upstream upgrade is a one-line change here.
       def list_wallets(provider: nil, project_id: nil, include_balances: nil)

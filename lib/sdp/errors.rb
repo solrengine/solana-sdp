@@ -38,7 +38,7 @@ module Sdp
   # Subclasses BadRequest so existing rescues keep working; never retryable —
   # the same request fails until the provider configuration changes.
   class ProviderCapabilityError < BadRequest
-    # Verified against SDP v0.28: assertCustodyProviderCanCreateWallet
+    # Verified against SDP v0.31: assertCustodyProviderCanCreateWallet
     # (apps/sdp-api/src/services/custody-provider-lifecycle.service.ts) and
     # createProviderWallet (services/domain/signing/provider-wallet-lifecycle.ts)
     # both throw:
@@ -54,7 +54,7 @@ module Sdp
   # mislabeling an RPC outage as "configure Kora" would be worse than a
   # generic error.
   class TransferExecutionError < Error
-    # Verified against SDP v0.28: NativeAdapter#signAndSend
+    # Verified against SDP v0.31: NativeAdapter#signAndSend
     # (apps/sdp-api/src/services/adapters/fee-payment/native/native.adapter.ts)
     # throws:
     #   "NativeAdapter.signAndSend not supported - use KoraAdapter for gasless transactions"

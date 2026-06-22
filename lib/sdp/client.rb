@@ -227,7 +227,7 @@ module Sdp
 
     # FL-10/FL-11: SDP reports custody/fee-payment capability gates as
     # generic 400/409/502 responses. Discriminators verified against SDP
-    # v0.28 (pattern constants documented in errors.rb). The upstream
+    # v0.31 (pattern constants documented in errors.rb). The upstream
     # message is preserved and the fix is appended, so logs keep the
     # original evidence.
     def capability_gate(klass, status, code, message, path)

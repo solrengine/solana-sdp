@@ -10,7 +10,7 @@ module Sdp
   # the real vendored pin, so path/schema navigation is tested on the real
   # spec structure, not on toy fixtures.
   class DriftTest < Minitest::Test
-    PINNED_PATH = File.expand_path("../../spec/openapi-v0.28.json", __dir__)
+    PINNED_PATH = File.expand_path("../../spec/openapi-v0.31.json", __dir__)
     PINNED_RAW = File.read(PINNED_PATH).freeze
     PINNED = JSON.parse(PINNED_RAW).freeze
 

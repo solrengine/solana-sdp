@@ -129,7 +129,7 @@ module Sdp
       # GET /v1/issuance/tokens → Enumerator yielding Sdp::Token.
       # Auto-paginates on meta.hasMore (see Pagination); re-sends filters per
       # page. Filters (camelCased on the wire): status:, page:, page_size:.
-      # (SDP v0.28 documents no other query filters on this endpoint.)
+      # (SDP v0.31 documents no other query filters on this endpoint.)
       def list_tokens(status: nil, page: nil, page_size: nil)
         query = { status: status, page: page, pageSize: page_size }.compact
         Pagination.enumerate(self, "/v1/issuance/tokens", query) do |response|

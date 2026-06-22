@@ -2,7 +2,7 @@
 
 module Sdp
   # The curated SDP surface this gem covers, pinned against the vendored
-  # OpenAPI spec (spec/openapi-v0.28.json). Consumed by the contract tests
+  # OpenAPI spec (spec/openapi-v0.31.json). Consumed by the contract tests
   # (test/sdp/contract_test.rb) and the sdp:drift rake task.
   #
   # Path templates use the {param} style of SDP's generated spec. When a
@@ -32,7 +32,7 @@ module Sdp
     PREPARED_TX_FIELDS = %w[serialized blockhash lastValidBlockHeight].freeze
 
     COVERED_ENDPOINTS = [
-      # NOTE: at v0.28 the initialize 201 response has NO data envelope —
+      # NOTE: at v0.31 the initialize 201 response has NO data envelope —
       # configId/publicKey/walletId sit at the schema root.
       Endpoint.new(method: "post", path: "/v1/wallets/initialize", success_status: "201",
                    reads: { [] => %w[configId publicKey walletId] }),
@@ -110,7 +110,7 @@ module Sdp
 
       # Follows "$ref": "#/components/schemas/X" pointers (recursively, with
       # a depth guard). SDP's generated spec is fully inlined today (zero
-      # $refs at v0.28) — this keeps the guard working if that changes.
+      # $refs at v0.31) — this keeps the guard working if that changes.
       def resolve(spec, node, depth = 0)
         return node unless node.is_a?(Hash) && node["$ref"].is_a?(String)
         return nil if depth > 10

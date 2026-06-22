@@ -139,7 +139,7 @@ module Sdp
 
       wallets = @client.list_wallets
 
-      # Not paginated at v0.28: the shared list helper must stop after one
+      # Not paginated at v0.31: the shared list helper must stop after one
       # fetch when meta carries no hasMore (and send no page params).
       assert_requested(stub, times: 1)
       assert_instance_of Array, wallets

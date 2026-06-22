@@ -4,7 +4,7 @@ require "test_helper"
 
 module Sdp
   # FL-10/FL-11 capability gates. Upstream messages in these stubs are the
-  # exact strings SDP v0.28 sends (verified against the SDP source — see the
+  # exact strings SDP v0.31 sends (verified against the SDP source — see the
   # pattern constants in lib/sdp/errors.rb).
   class CapabilityErrorsTest < Minitest::Test
     BASE_URL = "http://sdp.test:8787"
