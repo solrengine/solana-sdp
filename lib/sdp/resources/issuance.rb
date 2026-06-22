@@ -11,7 +11,7 @@ module Sdp
   Token = Struct.new(:id, :project_id, :signing_wallet_id, :mint_address,
                      :mint_authority, :freeze_authority, :name, :symbol, :decimals,
                      :description, :uri, :image_url, :template, :extensions,
-                     :total_supply, :max_supply, :is_mintable, :is_freezable,
+                     :total_supply, :max_supply, :mintable, :freezable,
                      :requires_allowlist, :status, :deployed_at, :created_at, :updated_at,
                      keyword_init: true) do
     def self.from_hash(hash)
@@ -33,8 +33,8 @@ module Sdp
         extensions: hash[:extensions],
         total_supply: hash[:total_supply],
         max_supply: hash[:max_supply],
-        is_mintable: hash[:is_mintable],
-        is_freezable: hash[:is_freezable],
+        mintable: hash[:is_mintable],
+        freezable: hash[:is_freezable],
         requires_allowlist: hash[:requires_allowlist],
         status: hash[:status],
         deployed_at: hash[:deployed_at],
@@ -149,12 +149,12 @@ module Sdp
       # a base-units string.
       def create_token(name:, symbol:, signing_wallet_id:, decimals: nil, max_supply: nil,
                        description: nil, uri: nil, image_url: nil, template: nil,
-                       is_mintable: nil, is_freezable: nil, requires_allowlist: nil)
+                       mintable: nil, freezable: nil, requires_allowlist: nil)
         payload = {
           name: name, symbol: symbol, signingWalletId: signing_wallet_id,
           decimals: decimals, maxSupply: max_supply, description: description,
           uri: uri, imageUrl: image_url, template: template,
-          isMintable: is_mintable, isFreezable: is_freezable, requiresAllowlist: requires_allowlist
+          isMintable: mintable, isFreezable: freezable, requiresAllowlist: requires_allowlist
         }.compact
         Token.from_hash(token_node(post("/v1/issuance/tokens", payload)))
       end
@@ -175,7 +175,9 @@ module Sdp
       # POST /v1/issuance/tokens/:id/mint → Sdp::TokenTransaction.
       # Custodial sign-and-send mint to destination; never retried. amount is a
       # base-units string. The associated token account is on #token_account.
-      def mint(token_id, signing_wallet_id:, destination:, amount:, memo: nil)
+      # (Noun-suffixed to match create_token/deploy_token and to leave room for a
+      # future #freeze_token without colliding with Ruby's Object#freeze.)
+      def mint_token(token_id, signing_wallet_id:, destination:, amount:, memo: nil)
         action_result(post(mint_path(token_id), mint_payload(signing_wallet_id, destination, amount, memo)))
       end
 
@@ -189,7 +191,7 @@ module Sdp
 
       # POST /v1/issuance/tokens/:id/burn → Sdp::TokenTransaction.
       # Custodial sign-and-send burn from source; never retried.
-      def burn(token_id, signing_wallet_id:, source:, amount:, memo: nil)
+      def burn_token(token_id, signing_wallet_id:, source:, amount:, memo: nil)
         action_result(post(burn_path(token_id), burn_payload(signing_wallet_id, source, amount, memo)))
       end
 

@@ -20,7 +20,7 @@ module Sdp
         .to_return(status: 201, headers: json_headers, body: token_body("tok_1", status: "created"))
 
       token = @client.create_token(name: "Acme USD", symbol: "AUSD", signing_wallet_id: "wal_a",
-                                    decimals: 6, max_supply: "1000000", is_mintable: true)
+                                    decimals: 6, max_supply: "1000000", mintable: true)
 
       assert_requested(stub)
       assert_instance_of Sdp::Token, token
@@ -175,7 +175,7 @@ module Sdp
                                    tokenAccount: "Ata58" },
                            meta: {} }.to_json)
 
-      tx = @client.mint("tok_1", signing_wallet_id: "wal_a", destination: "Dest58", amount: 1000, memo: "seed")
+      tx = @client.mint_token("tok_1", signing_wallet_id: "wal_a", destination: "Dest58", amount: 1000, memo: "seed")
 
       assert_requested(stub)
       assert_instance_of Sdp::TokenTransaction, tx
@@ -191,7 +191,7 @@ module Sdp
         .to_return(status: 200, headers: json_headers,
                    body: { data: { transaction: tx_hash("itx_2") }, meta: {} }.to_json)
 
-      tx = @client.mint("tok_1", signing_wallet_id: "wal_a", destination: "Dest58", amount: 5)
+      tx = @client.mint_token("tok_1", signing_wallet_id: "wal_a", destination: "Dest58", amount: 5)
 
       assert_requested(stub)
       assert_nil tx.token_account # absent upstream → nil
@@ -200,7 +200,7 @@ module Sdp
     def test_mint_empty_200_body_returns_all_nil_token_transaction
       stub_request(:post, "#{TOKENS_URL}/tok_1/mint").to_return(status: 200, body: "")
 
-      tx = @client.mint("tok_1", signing_wallet_id: "wal_a", destination: "Dest58", amount: "1")
+      tx = @client.mint_token("tok_1", signing_wallet_id: "wal_a", destination: "Dest58", amount: "1")
 
       assert_instance_of Sdp::TokenTransaction, tx
       assert_nil tx.id
@@ -212,7 +212,7 @@ module Sdp
       stub_request(:post, "#{TOKENS_URL}/tok_1/mint")
         .to_return(status: 200, headers: json_headers, body: { data: [ "unexpected" ], meta: {} }.to_json)
 
-      tx = @client.mint("tok_1", signing_wallet_id: "wal_a", destination: "Dest58", amount: "1")
+      tx = @client.mint_token("tok_1", signing_wallet_id: "wal_a", destination: "Dest58", amount: "1")
 
       assert_instance_of Sdp::TokenTransaction, tx
       assert_nil tx.id
@@ -247,7 +247,7 @@ module Sdp
                    body: { data: { transaction: tx_hash("itx_b1", type: "burn", status: "confirmed") },
                            meta: {} }.to_json)
 
-      tx = @client.burn("tok_1", signing_wallet_id: "wal_a", source: "Src58", amount: 250)
+      tx = @client.burn_token("tok_1", signing_wallet_id: "wal_a", source: "Src58", amount: 250)
 
       assert_requested(stub)
       assert_equal "itx_b1", tx.id
@@ -282,7 +282,7 @@ module Sdp
       stub = stub_request(:post, "#{TOKENS_URL}/tok_1/mint").to_raise(Errno::ECONNRESET)
 
       error = assert_raises(Sdp::Timeout) do
-        @client.mint("tok_1", signing_wallet_id: "wal_a", destination: "Dest58", amount: "1")
+        @client.mint_token("tok_1", signing_wallet_id: "wal_a", destination: "Dest58", amount: "1")
       end
       refute_instance_of Sdp::Unavailable, error
       assert_requested(stub, times: 1) # exactly one attempt — a re-sent mint risks a double-mint
@@ -294,7 +294,7 @@ module Sdp
       stub = stub_request(:post, "#{TOKENS_URL}/tok_1/burn").to_raise(Errno::ECONNRESET)
 
       error = assert_raises(Sdp::Timeout) do
-        @client.burn("tok_1", signing_wallet_id: "wal_a", source: "Src58", amount: "1")
+        @client.burn_token("tok_1", signing_wallet_id: "wal_a", source: "Src58", amount: "1")
       end
       refute_instance_of Sdp::Unavailable, error
       assert_requested(stub, times: 1)
@@ -317,7 +317,7 @@ module Sdp
                            meta: { requestId: "req-err" } }.to_json)
 
       error = assert_raises(Sdp::BadRequest) do
-        @client.mint("tok_1", signing_wallet_id: "wal_a", destination: "Dest58", amount: "1")
+        @client.mint_token("tok_1", signing_wallet_id: "wal_a", destination: "Dest58", amount: "1")
       end
 
       assert_equal "Token is not mintable", error.message
