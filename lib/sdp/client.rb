@@ -44,10 +44,11 @@ module Sdp
     # meta (hasMore/page), so the request layer always carries both.
     Response = Struct.new(:data, :meta, keyword_init: true)
 
-    attr_reader :base_url
+    attr_reader :base_url, :custody_provider
 
     def initialize(base_url: ENV.fetch("SDP_API_BASE_URL", DEFAULT_BASE_URL),
                    api_key: ENV["SDP_API_KEY"],
+                   custody_provider: ENV["SDP_CUSTODY_PROVIDER"],
                    open_timeout: OPEN_TIMEOUT,
                    read_timeout: READ_TIMEOUT)
       # Strip first, then guard: an ENV key with a trailing newline passes a
@@ -72,6 +73,13 @@ module Sdp
         raise ConfigurationError, "SDP_API_BASE_URL is invalid: expected an http(s) URL with a " \
           "host, got #{@base_url.inspect}. Pass base_url: or set the SDP_API_BASE_URL environment variable."
       end
+
+      # The default custody provider for wallet operations, configured once here
+      # (or via SDP_CUSTODY_PROVIDER) so callers don't repeat provider: on every
+      # create_wallet/initialize_custody. Blank → nil (fall through to SDP's own
+      # default). This is what makes the ProviderCapabilityError hint actionable.
+      provider = custody_provider.to_s.strip
+      @custody_provider = provider.empty? ? nil : provider
 
       @open_timeout = open_timeout
       @read_timeout = read_timeout

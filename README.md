@@ -69,6 +69,27 @@ Also available: `prepare_transfer` (build but don't sign/send, for non-custodial
 
 `list_wallets` returns an **Array** (`[Sdp::Wallet, ...]`) today — SDP does not paginate `/v1/wallets` at v0.31, so the result is fetched eagerly. When SDP adds pagination this will become a lazy Enumerator (matching `list_transfers`). Use Enumerable methods (`.find`, `.each`, `.map`) rather than array indexing or `.length` to stay forward-compatible.
 
+## Custody providers
+
+SDP wallets are created under a custody provider. Configure it once — on the client or via `SDP_CUSTODY_PROVIDER` — and every wallet operation (`initialize_custody`, `create_wallet`, `list_wallets`) uses it unless you pass an explicit `provider:`:
+
+```ruby
+client = Sdp::Client.new(custody_provider: "privy")   # or set SDP_CUSTODY_PROVIDER
+client.custody_provider          # => "privy"
+client.create_wallet(label: "user-42")                # uses "privy"
+client.create_wallet(label: "x", provider: "turnkey") # per-call override
+```
+
+Provider matrix (v0.2):
+
+| Provider | Wallet-per-User | Status |
+|---|---|---|
+| **Privy** (managed) | Yes | **Verified** end-to-end on devnet |
+| Other managed providers (e.g. Turnkey) | Yes (per SDP) | Pass-through — forwarded to SDP, not independently verified here |
+| **Local** custody | **No** | Holds a single root wallet; `create_wallet` raises `Sdp::ProviderCapabilityError` |
+
+Wallet-per-User requires a **managed** provider. With local custody, SDP exposes one root wallet and rejects `POST /v1/wallets` — the gem turns that into a typed `Sdp::ProviderCapabilityError` whose message tells you to set a managed provider (see below). The gem does **not** maintain an allow-list of provider names — `provider:` is forwarded to SDP, which is the authority on what it supports, so new SDP providers work without a gem release.
+
 ## Error taxonomy
 
 Everything raised by this gem subclasses `Sdp::Error`, which carries `#code`, `#http_status`, `#details`, and `#meta` alongside the message. Both `#details` and `#meta` are Hashes with **snake_case symbol keys** — SDP's camelCase JSON is converted to Ruby style throughout (e.g. `error.details[:field_errors]`, not `"fieldErrors"` or `:fieldErrors`). The taxonomy mirrors how SDP actually fails:
