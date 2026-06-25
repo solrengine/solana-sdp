@@ -145,8 +145,9 @@ module Sdp
 
       # POST /v1/issuance/tokens → Sdp::Token.
       # Registers the token record; it is NOT on-chain until #deploy_token.
-      # Never retried (write). amounts/decimals follow SDP's types; maxSupply is
-      # a base-units string.
+      # Never retried (write). maxSupply is a DECIMAL token-amount string (whole
+      # tokens, e.g. "1000000" = one million tokens) — SDP applies the token's
+      # decimals, same convention as transfer amounts. NOT base units.
       def create_token(name:, symbol:, signing_wallet_id:, decimals: nil, max_supply: nil,
                        description: nil, uri: nil, image_url: nil, template: nil,
                        mintable: nil, freezable: nil, requires_allowlist: nil)
@@ -174,7 +175,9 @@ module Sdp
 
       # POST /v1/issuance/tokens/:id/mint → Sdp::TokenTransaction.
       # Custodial sign-and-send mint to destination; never retried. amount is a
-      # base-units string. The associated token account is on #token_account.
+      # DECIMAL token-amount string (whole tokens, e.g. "1.5") — SDP scales it by
+      # the token's decimals, NOT base units. The associated token account is on
+      # #token_account.
       # (Noun-suffixed to match create_token/deploy_token and to leave room for a
       # future #freeze_token without colliding with Ruby's Object#freeze.)
       def mint_token(token_id, signing_wallet_id:, destination:, amount:, memo: nil)
@@ -190,7 +193,8 @@ module Sdp
       end
 
       # POST /v1/issuance/tokens/:id/burn → Sdp::TokenTransaction.
-      # Custodial sign-and-send burn from source; never retried.
+      # Custodial sign-and-send burn from source; never retried. amount is a
+      # DECIMAL token-amount string, same as #mint_token (NOT base units).
       def burn_token(token_id, signing_wallet_id:, source:, amount:, memo: nil)
         action_result(post(burn_path(token_id), burn_payload(signing_wallet_id, source, amount, memo)))
       end
