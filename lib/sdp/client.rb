@@ -4,11 +4,14 @@ require "net/http"
 require "openssl"
 require "json"
 require "uri"
+require "bigdecimal"
 
 require_relative "errors"
 require_relative "pagination"
 require_relative "resources/wallets"
 require_relative "resources/payments"
+require_relative "resources/issuance"
+require_relative "resources/ramps"
 
 module Sdp
   # Zero-dependency Net::HTTP request core for the SDP API.
@@ -25,6 +28,8 @@ module Sdp
   class Client
     include Resources::Wallets
     include Resources::Payments
+    include Resources::Issuance
+    include Resources::Ramps
 
     DEFAULT_BASE_URL = "http://127.0.0.1:8787"
     OPEN_TIMEOUT = 2  # seconds — fail fast when the stack isn't up
@@ -40,10 +45,11 @@ module Sdp
     # meta (hasMore/page), so the request layer always carries both.
     Response = Struct.new(:data, :meta, keyword_init: true)
 
-    attr_reader :base_url
+    attr_reader :base_url, :custody_provider
 
     def initialize(base_url: ENV.fetch("SDP_API_BASE_URL", DEFAULT_BASE_URL),
                    api_key: ENV["SDP_API_KEY"],
+                   custody_provider: ENV["SDP_CUSTODY_PROVIDER"],
                    open_timeout: OPEN_TIMEOUT,
                    read_timeout: READ_TIMEOUT)
       # Strip first, then guard: an ENV key with a trailing newline passes a
@@ -68,6 +74,13 @@ module Sdp
         raise ConfigurationError, "SDP_API_BASE_URL is invalid: expected an http(s) URL with a " \
           "host, got #{@base_url.inspect}. Pass base_url: or set the SDP_API_BASE_URL environment variable."
       end
+
+      # The default custody provider for wallet operations, configured once here
+      # (or via SDP_CUSTODY_PROVIDER) so callers don't repeat provider: on every
+      # create_wallet/initialize_custody. Blank → nil (fall through to SDP's own
+      # default). This is what makes the ProviderCapabilityError hint actionable.
+      provider = custody_provider.to_s.strip
+      @custody_provider = provider.empty? ? nil : provider
 
       @open_timeout = open_timeout
       @read_timeout = read_timeout
@@ -225,7 +238,7 @@ module Sdp
 
     # FL-10/FL-11: SDP reports custody/fee-payment capability gates as
     # generic 400/409/502 responses. Discriminators verified against SDP
-    # v0.28 (pattern constants documented in errors.rb). The upstream
+    # v0.31 (pattern constants documented in errors.rb). The upstream
     # message is preserved and the fix is appended, so logs keep the
     # original evidence.
     def capability_gate(klass, status, code, message, path)
@@ -288,6 +301,25 @@ module Sdp
 
     def underscore_key(key)
       key.to_s.gsub(/([a-z\d])([A-Z])/, '\1_\2').downcase.to_sym
+    end
+
+    # Shared resource helpers — defined once on the HTTP layer the resource
+    # modules mix into, rather than duplicated per module.
+
+    # Percent-encode a caller-supplied id before interpolating it into a path.
+    def encode_path_segment(segment)
+      URI.encode_uri_component(segment.to_s)
+    end
+
+    # Serialize a money amount to a plain decimal string. Integer/String pass
+    # through unchanged (Integer#to_s never uses scientific notation); a Float
+    # is routed through BigDecimal so a small value like 1e-07 serializes as
+    # "0.0000001" rather than "1.0e-07", which SDP rejects. Prefer passing
+    # base-unit amounts as strings — Floats are lossy.
+    def amount_string(amount)
+      return amount.to_s unless amount.is_a?(Float)
+
+      BigDecimal(amount.to_s).to_s("F")
     end
   end
 end

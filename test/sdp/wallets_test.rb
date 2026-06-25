@@ -139,7 +139,7 @@ module Sdp
 
       wallets = @client.list_wallets
 
-      # Not paginated at v0.28: the shared list helper must stop after one
+      # Not paginated at v0.31: the shared list helper must stop after one
       # fetch when meta carries no hasMore (and send no page params).
       assert_requested(stub, times: 1)
       assert_instance_of Array, wallets
@@ -293,6 +293,67 @@ module Sdp
 
       @client.wallet_balances("wal?x=1")
       assert_requested(stub)
+    end
+
+    # -- configured custody provider --------------------------------------------
+
+    def test_create_wallet_uses_the_configured_custody_provider_when_none_passed
+      client = Sdp::Client.new(base_url: BASE_URL, api_key: "k", custody_provider: "privy")
+      stub = stub_request(:post, WALLETS_URL)
+        .with(body: { label: "user-42", provider: "privy" })
+        .to_return(status: 201, headers: json_headers,
+                   body: { data: { wallet: { walletId: "wal_1" } }, meta: {} }.to_json)
+
+      client.create_wallet(label: "user-42")
+      assert_requested(stub)
+    end
+
+    def test_explicit_provider_overrides_the_configured_custody_provider
+      client = Sdp::Client.new(base_url: BASE_URL, api_key: "k", custody_provider: "privy")
+      stub = stub_request(:post, WALLETS_URL)
+        .with(body: { label: "x", provider: "turnkey" })
+        .to_return(status: 201, headers: json_headers,
+                   body: { data: { wallet: { walletId: "wal_2" } }, meta: {} }.to_json)
+
+      client.create_wallet(label: "x", provider: "turnkey")
+      assert_requested(stub)
+    end
+
+    def test_custody_provider_defaults_to_the_sdp_custody_provider_env
+      original = ENV["SDP_CUSTODY_PROVIDER"]
+      ENV["SDP_CUSTODY_PROVIDER"] = "privy"
+      assert_equal "privy", Sdp::Client.new(base_url: BASE_URL, api_key: "k").custody_provider
+    ensure
+      ENV["SDP_CUSTODY_PROVIDER"] = original
+    end
+
+    def test_blank_custody_provider_normalizes_to_nil_and_is_omitted_from_requests
+      client = Sdp::Client.new(base_url: BASE_URL, api_key: "k", custody_provider: "  ")
+      assert_nil client.custody_provider
+
+      stub = stub_request(:post, WALLETS_URL)
+        .with(body: { label: "x" }) # no provider key on the wire
+        .to_return(status: 201, headers: json_headers,
+                   body: { data: { wallet: { walletId: "wal_3" } }, meta: {} }.to_json)
+
+      client.create_wallet(label: "x")
+      assert_requested(stub)
+    end
+
+    def test_initialize_custody_and_list_wallets_use_the_configured_provider
+      client = Sdp::Client.new(base_url: BASE_URL, api_key: "k", custody_provider: "privy")
+      init = stub_request(:post, INITIALIZE_URL)
+        .with(body: { provider: "privy" })
+        .to_return(status: 201, headers: json_headers, body: { data: { provider: "privy" }, meta: {} }.to_json)
+      list = stub_request(:get, WALLETS_URL)
+        .with(query: { "provider" => "privy" })
+        .to_return(status: 200, headers: json_headers, body: { data: { wallets: [] }, meta: {} }.to_json)
+
+      client.initialize_custody
+      client.list_wallets.to_a
+
+      assert_requested(init)
+      assert_requested(list)
     end
 
     private

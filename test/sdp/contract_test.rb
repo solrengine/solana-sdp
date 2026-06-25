@@ -4,11 +4,11 @@ require "test_helper"
 
 module Sdp
   # Contract guard: every covered endpoint must exist in the vendored
-  # pinned spec (spec/openapi-v0.28.json) with the expected verb, and every
+  # pinned spec (spec/openapi-v0.31.json) with the expected verb, and every
   # field our structs read must be present in the success-response schema.
   # When SDP's spec moves, re-vendor and these tests name exactly what broke.
   class ContractTest < Minitest::Test
-    SPEC_PATH = File.expand_path("../../spec/openapi-v0.28.json", __dir__)
+    SPEC_PATH = File.expand_path("../../spec/openapi-v0.31.json", __dir__)
     SPEC = JSON.parse(File.read(SPEC_PATH)).freeze
 
     Sdp::Coverage::COVERED_ENDPOINTS.each do |endpoint|
@@ -43,9 +43,9 @@ module Sdp
       end
     end
 
-    def test_coverage_map_lists_the_eight_covered_operations
+    def test_coverage_map_lists_the_covered_operations
       operations = Sdp::Coverage::COVERED_ENDPOINTS.map { |e| [ e.method, e.path ] }
-      assert_equal 8, operations.size
+      assert_equal 23, operations.size # 8 wallets/payments + 9 issuance + 6 ramps (v0.2)
       assert_equal operations.uniq, operations
     end
   end

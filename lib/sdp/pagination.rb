@@ -16,12 +16,12 @@ module Sdp
   # :pageSize is clamped client-side to MAX_PAGE_SIZE — SDP rejects larger
   # values, and a clamped request is more useful than a guaranteed 400.
   #
-  # Non-paginated list endpoints (GET /v1/wallets at v0.28) flow through the
+  # Non-paginated list endpoints (GET /v1/wallets at v0.31) flow through the
   # same helper: their meta carries no hasMore, so enumeration stops after a
   # single fetch — and they pick up auto-pagination for free if SDP paginates
   # them in a later version.
   module Pagination
-    MAX_PAGE_SIZE = 100    # SDP's pageSize ceiling (v0.28)
+    MAX_PAGE_SIZE = 100    # SDP's pageSize ceiling (v0.31)
     MAX_PAGES     = 10_000 # defensive ceiling; empty-page + hasMore guards are the primary stop
 
     # client — anything exposing #get(path, query:) → Client::Response

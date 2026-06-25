@@ -2,7 +2,7 @@
 
 module Sdp
   # The curated SDP surface this gem covers, pinned against the vendored
-  # OpenAPI spec (spec/openapi-v0.28.json). Consumed by the contract tests
+  # OpenAPI spec (spec/openapi-v0.31.json). Consumed by the contract tests
   # (test/sdp/contract_test.rb) and the sdp:drift rake task.
   #
   # Path templates use the {param} style of SDP's generated spec. When a
@@ -21,9 +21,25 @@ module Sdp
     BALANCE_FIELDS = %w[token mint amount uiAmount decimals usdValue].freeze
     # Fields read by Sdp::Transfer.from_hash.
     TRANSFER_FIELDS = %w[id direction status signature token amount source destination memo error createdAt].freeze
+    # Fields read by Sdp::Token.from_hash. extensions is passed through untyped.
+    TOKEN_FIELDS = %w[id projectId signingWalletId mintAddress mintAuthority freezeAuthority name symbol
+                      decimals description uri imageUrl template extensions totalSupply maxSupply isMintable
+                      isFreezable requiresAllowlist status deployedAt createdAt updatedAt].freeze
+    # Fields read by Sdp::TokenTransaction.from_hash (the mint/burn action record).
+    TOKEN_TX_FIELDS = %w[id tokenId type status signature serializedTx params slot blockTime fee error
+                         createdAt updatedAt].freeze
+    # The unsigned-transaction envelope shared by the .../prepare responses.
+    PREPARED_TX_FIELDS = %w[serialized blockhash lastValidBlockHeight].freeze
+    # Fields read by Sdp::RampQuote.from_hash. The *Currency members are passed
+    # through untyped, so only their presence at data.quote is pinned.
+    RAMP_QUOTE_FIELDS = %w[id provider status deliveryMode hostedUrl paymentInstructions exchangeRate
+                           totalSendingAmount sendingCurrency totalReceivingAmount receivingCurrency
+                           feesIncluded feeCurrency expiresAt].freeze
+    # Fields read by Sdp::RampExecution.from_hash.
+    RAMP_EXECUTION_FIELDS = %w[id provider status redirectUrl paymentInstructions reference].freeze
 
     COVERED_ENDPOINTS = [
-      # NOTE: at v0.28 the initialize 201 response has NO data envelope —
+      # NOTE: at v0.31 the initialize 201 response has NO data envelope —
       # configId/publicKey/walletId sit at the schema root.
       Endpoint.new(method: "post", path: "/v1/wallets/initialize", success_status: "201",
                    reads: { [] => %w[configId publicKey walletId] }),
@@ -43,7 +59,59 @@ module Sdp
       Endpoint.new(method: "get", path: "/v1/payments/transfers", success_status: "200",
                    reads: { [ "data", "[]" ] => TRANSFER_FIELDS }),
       Endpoint.new(method: "get", path: "/v1/payments/transfers/{transferId}", success_status: "200",
-                   reads: { %w[data transfer] => TRANSFER_FIELDS })
+                   reads: { %w[data transfer] => TRANSFER_FIELDS }),
+
+      # Issuance — token lifecycle + supply actions (v0.2). list returns a bare
+      # data array; create/get/deploy wrap the token in data.token. mint/burn
+      # return the action record at data.transaction; mint also carries
+      # data.tokenAccount. The prepare variants differ: deploy/prepare puts the
+      # unsigned tx at data.transaction with a sibling data.mint, while
+      # mint/burn prepare keep the record at data.transaction and the unsigned
+      # tx at data.preparedTransaction.
+      Endpoint.new(method: "get", path: "/v1/issuance/tokens", success_status: "200",
+                   reads: { [ "data", "[]" ] => TOKEN_FIELDS }),
+      Endpoint.new(method: "post", path: "/v1/issuance/tokens", success_status: "201",
+                   reads: { %w[data token] => TOKEN_FIELDS }),
+      Endpoint.new(method: "get", path: "/v1/issuance/tokens/{tokenId}", success_status: "200",
+                   reads: { %w[data token] => TOKEN_FIELDS }),
+      Endpoint.new(method: "post", path: "/v1/issuance/tokens/{tokenId}/deploy", success_status: "200",
+                   reads: { %w[data token] => TOKEN_FIELDS }),
+      Endpoint.new(method: "post", path: "/v1/issuance/tokens/{tokenId}/deploy/prepare", success_status: "200",
+                   reads: { %w[data] => %w[transaction mint simulation],
+                            %w[data transaction] => PREPARED_TX_FIELDS }),
+      Endpoint.new(method: "post", path: "/v1/issuance/tokens/{tokenId}/mint", success_status: "200",
+                   reads: { %w[data] => %w[transaction tokenAccount],
+                            %w[data transaction] => TOKEN_TX_FIELDS }),
+      Endpoint.new(method: "post", path: "/v1/issuance/tokens/{tokenId}/mint/prepare", success_status: "200",
+                   reads: { %w[data] => %w[transaction preparedTransaction tokenAccount simulation],
+                            %w[data transaction] => TOKEN_TX_FIELDS,
+                            %w[data preparedTransaction] => PREPARED_TX_FIELDS }),
+      Endpoint.new(method: "post", path: "/v1/issuance/tokens/{tokenId}/burn", success_status: "200",
+                   reads: { %w[data transaction] => TOKEN_TX_FIELDS }),
+      Endpoint.new(method: "post", path: "/v1/issuance/tokens/{tokenId}/burn/prepare", success_status: "200",
+                   reads: { %w[data] => %w[transaction preparedTransaction simulation],
+                            %w[data transaction] => TOKEN_TX_FIELDS,
+                            %w[data preparedTransaction] => PREPARED_TX_FIELDS }),
+
+      # Ramps (v0.2, sandbox-only). currency endpoints return nested discovery
+      # data; quote wraps the record in data.quote, execute in data.ramp; the
+      # sandbox hook returns data.transaction (untyped passthrough).
+      Endpoint.new(method: "get", path: "/v1/payments/ramps/onramp/currency", success_status: "200",
+                   reads: { %w[data] => %w[currencies pairs supportHash],
+                            %w[data currencies] => %w[sources destinations],
+                            [ "data", "pairs", "[]" ] => %w[source dest providers] }),
+      Endpoint.new(method: "get", path: "/v1/payments/ramps/offramp/currency", success_status: "200",
+                   reads: { %w[data] => %w[currencies pairs supportHash],
+                            %w[data currencies] => %w[sources destinations],
+                            [ "data", "pairs", "[]" ] => %w[source dest providers] }),
+      Endpoint.new(method: "post", path: "/v1/payments/ramps/onramp/quote", success_status: "200",
+                   reads: { %w[data quote] => RAMP_QUOTE_FIELDS }),
+      Endpoint.new(method: "post", path: "/v1/payments/ramps/onramp/execute", success_status: "200",
+                   reads: { %w[data ramp] => RAMP_EXECUTION_FIELDS }),
+      Endpoint.new(method: "post", path: "/v1/payments/ramps/offramp/execute", success_status: "200",
+                   reads: { %w[data ramp] => RAMP_EXECUTION_FIELDS }),
+      Endpoint.new(method: "post", path: "/v1/payments/ramps/sandbox/simulate", success_status: "200",
+                   reads: { %w[data] => %w[transaction] })
     ].freeze
 
     class << self
@@ -69,7 +137,7 @@ module Sdp
 
       # Follows "$ref": "#/components/schemas/X" pointers (recursively, with
       # a depth guard). SDP's generated spec is fully inlined today (zero
-      # $refs at v0.28) — this keeps the guard working if that changes.
+      # $refs at v0.31) — this keeps the guard working if that changes.
       def resolve(spec, node, depth = 0)
         return node unless node.is_a?(Hash) && node["$ref"].is_a?(String)
         return nil if depth > 10

@@ -1,10 +1,10 @@
 # solana-sdp
 
-Ruby SDK for the [Solana Developer Platform](https://github.com/solana-foundation/solana-developer-platform) (SDP) wallets and payments API.
+Ruby SDK for the [Solana Developer Platform](https://github.com/solana-foundation/solana-developer-platform) (SDP) wallets, payments, token-issuance, and ramp APIs.
 
 Plain Ruby, zero runtime dependencies (`Net::HTTP`), typed rescuable errors that mirror SDP's real failure modes, and a retry posture that never re-sends a transfer.
 
-> SDP is pre-mainnet, unaudited, and devnet-oriented — so is this gem. Tested against SDP **v0.28** (see [Version pin](#version-pin) below).
+> SDP is pre-mainnet, unaudited, and devnet-oriented — so is this gem. Tested against SDP **v0.31** (see [Version pin](#version-pin) below).
 
 ## Install
 
@@ -67,7 +67,28 @@ end
 
 Also available: `prepare_transfer` (build but don't sign/send, for non-custodial flows), `get_transfer`, `list_wallets`.
 
-`list_wallets` returns an **Array** (`[Sdp::Wallet, ...]`) today — SDP does not paginate `/v1/wallets` at v0.28, so the result is fetched eagerly. When SDP adds pagination this will become a lazy Enumerator (matching `list_transfers`). Use Enumerable methods (`.find`, `.each`, `.map`) rather than array indexing or `.length` to stay forward-compatible.
+`list_wallets` returns an **Array** (`[Sdp::Wallet, ...]`) today — SDP does not paginate `/v1/wallets` at v0.31, so the result is fetched eagerly. When SDP adds pagination this will become a lazy Enumerator (matching `list_transfers`). Use Enumerable methods (`.find`, `.each`, `.map`) rather than array indexing or `.length` to stay forward-compatible.
+
+## Custody providers
+
+SDP wallets are created under a custody provider. Configure it once — on the client or via `SDP_CUSTODY_PROVIDER` — and every wallet operation (`initialize_custody`, `create_wallet`, `list_wallets`) uses it unless you pass an explicit `provider:`:
+
+```ruby
+client = Sdp::Client.new(custody_provider: "privy")   # or set SDP_CUSTODY_PROVIDER
+client.custody_provider          # => "privy"
+client.create_wallet(label: "user-42")                # uses "privy"
+client.create_wallet(label: "x", provider: "turnkey") # per-call override
+```
+
+Provider matrix (v0.2):
+
+| Provider | Wallet-per-User | Status |
+|---|---|---|
+| **Privy** (managed) | Yes | **Verified** end-to-end on devnet |
+| Other managed providers (e.g. Turnkey) | Yes (per SDP) | Pass-through — forwarded to SDP, not independently verified here |
+| **Local** custody | **No** | Holds a single root wallet; `create_wallet` raises `Sdp::ProviderCapabilityError` |
+
+Wallet-per-User requires a **managed** provider. With local custody, SDP exposes one root wallet and rejects `POST /v1/wallets` — the gem turns that into a typed `Sdp::ProviderCapabilityError` whose message tells you to set a managed provider (see below). The gem does **not** maintain an allow-list of provider names — `provider:` is forwarded to SDP, which is the authority on what it supports, so new SDP providers work without a gem release.
 
 ## Error taxonomy
 
@@ -90,7 +111,7 @@ Everything raised by this gem subclasses `Sdp::Error`, which carries `#code`, `#
 | `Sdp::Unavailable` | Connection refused/reset, connect timeout, or a 5xx that isn't a recognized capability gate | Yes — the request wasn't processed |
 | `Sdp::TransferExecutionError` (< `Sdp::Error`) | 502 `SOLANA_RPC_ERROR` carrying SDP's NativeAdapter signature — the fee-payment provider cannot submit transactions. **Not caught by `rescue Sdp::Unavailable`** — it is not a transient error | No — configuration fix |
 
-Two of these encode SDP capability gates that otherwise surface as cryptic generic errors (discriminator strings verified against SDP v0.28, documented in `lib/sdp/errors.rb`):
+Two of these encode SDP capability gates that otherwise surface as cryptic generic errors (discriminator strings verified against SDP v0.31, documented in `lib/sdp/errors.rb`):
 
 - **`Sdp::ProviderCapabilityError`** — with local custody, SDP holds a single root wallet and `POST /v1/wallets` is rejected ("Wallet provisioning not supported for provider: local"). Wallet-per-User requires a managed provider (e.g. privy): pass `provider:` to `create_wallet` or set `SDP_CUSTODY_PROVIDER`. Also raised when `initialize_custody` is called twice for the same org+project (409) — initialization is one-time.
 - **`Sdp::TransferExecutionError`** — with `FEE_PAYMENT_PROVIDER=native`, SDP can build and sign transfers but cannot submit them; the 502 message contains the `NativeAdapter` signature. Fix: run Kora and set `FEE_PAYMENT_PROVIDER=kora`. A 502 that does *not* match this signature stays `Sdp::Unavailable` — a real RPC outage is never mislabeled as a configuration problem.
@@ -98,7 +119,7 @@ Two of these encode SDP capability gates that otherwise surface as cryptic gener
 ## Retry posture
 
 - **GETs retry exactly once** on `Sdp::Timeout` / `Sdp::Unavailable` (transport-level failures), then raise.
-- **POSTs never retry.** SDP has no idempotency key at v0.28: re-sending a transfer after a read timeout risks a double-spend, because the first attempt may have landed on-chain. On `Sdp::Timeout` from a write, reconcile first (e.g. `list_transfers` filtered by wallet, or match a memo) before re-submitting.
+- **POSTs never retry.** SDP has no idempotency key at v0.31: re-sending a transfer after a read timeout risks a double-spend, because the first attempt may have landed on-chain. On `Sdp::Timeout` from a write, reconcile first (e.g. `list_transfers` filtered by wallet, or match a memo) before re-submitting.
 - `Sdp::TransactionFailed` is never retried blindly — it reports an on-chain outcome, not a transport failure.
 - `Sdp::Unavailable` means the request was not processed (connection never opened, or a 5xx without SDP's error envelope), so it is safe to retry — with backoff for `Sdp::RateLimited`.
 
@@ -109,16 +130,25 @@ Wallet-scoped API keys return **404 (not 403)** for wallets outside their scope.
 ## Version pin
 
 ```ruby
-Sdp::COMPATIBLE_SDP_VERSION # => "0.28"
+Sdp::COMPATIBLE_SDP_VERSION # => "0.31"
 ```
 
-SDP breaks its API between minor versions. Every release of this gem names the SDP version it was tested against, both here and in the `Sdp::COMPATIBLE_SDP_VERSION` constant. The covered API surface is pinned to a vendored copy of SDP's OpenAPI spec (`spec/openapi-v0.28.json`); contract tests assert every field this gem reads exists in that spec, and `rake "sdp:drift[path/to/newer/openapi.json]"` diffs a newer SDP spec against the pin to report exactly which covered endpoints changed. On an SDP version bump: re-vendor the spec, re-run the contract tests, update `COMPATIBLE_SDP_VERSION`.
+SDP breaks its API between minor versions. Every release of this gem names the SDP version it was tested against, both here and in the `Sdp::COMPATIBLE_SDP_VERSION` constant. The covered API surface is pinned to a vendored copy of SDP's OpenAPI spec (`spec/openapi-v0.31.json`); contract tests assert every field this gem reads exists in that spec, and `rake "sdp:drift[path/to/newer/openapi.json]"` diffs a newer SDP spec against the pin to report exactly which covered endpoints changed. On an SDP version bump: re-vendor the spec, re-run the contract tests, update `COMPATIBLE_SDP_VERSION`.
 
 Running against a different SDP version may work, but field shapes (e.g. `usdValue` on balances) are known to change between minors.
 
 ## Scope
 
-This gem covers SDP's wallets and payments surface: custody initialization, wallet provisioning and listing, balances, and transfers (create/prepare/list/get). Ramps, issuance, and the dashboard APIs are out of scope.
+This gem covers SDP's wallets, payments, token-issuance, and ramp surface:
+
+- **Wallets** — custody initialization, wallet provisioning and listing, balances.
+- **Payments** — transfers (create / prepare / list / get).
+- **Issuance** (token lifecycle) — tokens (list / get / create / deploy) and supply actions (mint / burn), each action with a `prepare` variant for caller-signed flows.
+- **Ramps** *(sandbox-only)* — fiat on/off-ramps: currency discovery, on-ramp quote, on/off-ramp execute, and the sandbox `simulate` hook. **Wired against SDP's ramp surface and verified against the sandbox, not live fiat rails** — treat as preview in v0.2.
+
+The issuance compliance actions (freeze/unfreeze, pause, authority, allowlist, seize, force-burn) and the dashboard APIs are out of scope.
+
+> **Custodial issuance needs Kora.** `deploy_token`, `mint_token`, and `burn_token` are custodial sign-and-send and route through SDP's fee-payment adapter — like transfers, they require `FEE_PAYMENT_PROVIDER=kora` on a self-hosted SDP (the `native` adapter cannot submit transactions and returns a typed `Sdp::TransferExecutionError`). The `prepare_*` variants build an unsigned transaction and are unaffected.
 
 A Rails engine builds on this client — Wallet-per-User provisioning, transfer persistence, and realtime balance updates — as [solrengine-sdp](https://github.com/solrengine/sdp).
 

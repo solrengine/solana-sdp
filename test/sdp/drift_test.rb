@@ -10,12 +10,12 @@ module Sdp
   # the real vendored pin, so path/schema navigation is tested on the real
   # spec structure, not on toy fixtures.
   class DriftTest < Minitest::Test
-    PINNED_PATH = File.expand_path("../../spec/openapi-v0.28.json", __dir__)
+    PINNED_PATH = File.expand_path("../../spec/openapi-v0.31.json", __dir__)
     PINNED_RAW = File.read(PINNED_PATH).freeze
     PINNED = JSON.parse(PINNED_RAW).freeze
 
     BALANCES_PATH = "/v1/payments/wallets/{walletId}/balances"
-    RAMPS_PATH = "/v1/payments/ramps/onramp/quote" # uncovered surface
+    UNCOVERED_PATH = "/v1/counterparties" # genuinely uncovered surface (ramps are covered as of v0.2)
 
     def test_identical_specs_report_no_drift
       assert_empty Drift.diff(PINNED, doctored)
@@ -65,12 +65,12 @@ module Sdp
         "expected projectId reported as newly required, got: #{findings.inspect}")
     end
 
-    # Churn outside the covered surface (ramps, issuance, ...) is invisible.
+    # Churn outside the covered surface (counterparties, members, ...) is invisible.
     def test_changes_to_uncovered_endpoints_are_silent
       newer = doctored do |spec|
-        assert spec["paths"].key?(RAMPS_PATH), "fixture assumption: ramps path present in pinned spec"
-        spec["paths"].delete(RAMPS_PATH)
-        spec["paths"]["/v1/payments/ramps/brand-new"] = { "post" => { "responses" => {} } }
+        assert spec["paths"].key?(UNCOVERED_PATH), "fixture assumption: uncovered path present in pinned spec"
+        spec["paths"].delete(UNCOVERED_PATH)
+        spec["paths"]["/v1/counterparties/brand-new"] = { "post" => { "responses" => {} } }
       end
 
       assert_empty Drift.diff(PINNED, newer)
